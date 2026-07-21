@@ -86,4 +86,24 @@ describe('X DOM adapter', () => {
 
     expect(extractDisplayNameFromElement(element, 'alice')).toBe('Alice New Name');
   });
+
+  it('extracts a display name from the linkless identity structure used by X profiles', () => {
+    const element = document.createElement('div');
+    element.innerHTML = `
+      <div>
+        <div>
+          <div>
+            <span>
+              <span>むとうあやか</span><img alt="❣️"><span>本垢です。</span>
+            </span>
+          </div>
+          <div><span>@mutoayaka12</span></div>
+        </div>
+      </div>
+    `;
+
+    expect(extractDisplayNameFromElement(element, 'mutoayaka12')).toBe(
+      'むとうあやか❣️本垢です。',
+    );
+  });
 });

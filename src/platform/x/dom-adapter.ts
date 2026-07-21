@@ -76,6 +76,22 @@ function linkReferencesHandle(link: HTMLAnchorElement, handle: string): boolean 
   }
 }
 
+function identityText(element: Element): string {
+  let text = '';
+
+  for (const node of element.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent ?? '';
+    } else if (node instanceof HTMLImageElement) {
+      text += node.alt;
+    } else if (node instanceof Element) {
+      text += identityText(node);
+    }
+  }
+
+  return text;
+}
+
 export function extractDisplayNameFromElement(
   element: Element,
   handle: string,
@@ -95,9 +111,27 @@ export function extractDisplayNameFromElement(
     }
 
     try {
-      return normalizeDisplayName(link.textContent ?? '');
+      return normalizeDisplayName(identityText(link));
     } catch {
       // Continue looking for another name link in the identity block.
+    }
+  }
+
+  const identityElements = element.querySelectorAll<HTMLElement>('div, span');
+  for (const handleElement of identityElements) {
+    if (handleFromExactText(handleElement) !== normalizedHandle) {
+      continue;
+    }
+
+    const nameElement = handleElement.previousElementSibling;
+    if (!nameElement) {
+      continue;
+    }
+
+    try {
+      return normalizeDisplayName(identityText(nameElement));
+    } catch {
+      // Continue looking for another handle/name sibling pair.
     }
   }
 
