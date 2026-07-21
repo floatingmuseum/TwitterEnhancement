@@ -1,0 +1,241 @@
+:host {
+  --te-accent: #1d9bf0;
+  --te-text: #0f1419;
+  --te-muted: #536471;
+  --te-surface: rgba(29, 155, 240, 0.075);
+  --te-surface-hover: rgba(29, 155, 240, 0.13);
+  --te-field: #ffffff;
+  --te-border: rgba(83, 100, 113, 0.3);
+  --te-danger: #f4212e;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 12px 0 0;
+  color: var(--te-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+:host([data-te-theme="dark"]) {
+  --te-text: #e7e9ea;
+  --te-muted: #71767b;
+  --te-surface: rgba(29, 155, 240, 0.1);
+  --te-surface-hover: rgba(29, 155, 240, 0.16);
+  --te-field: #0f1419;
+  --te-border: rgba(113, 118, 123, 0.45);
+}
+
+:host([data-te-surface="hover-card"]) {
+  margin-top: 10px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+.te-note {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--te-text);
+  background: var(--te-surface);
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+
+.te-note::before {
+  position: absolute;
+  z-index: 1;
+  top: 7px;
+  bottom: 7px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--te-accent);
+  content: "";
+}
+
+.te-note__display {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px 8px 13px;
+  border: 0;
+  border-radius: 9px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 120ms ease;
+}
+
+.te-note__display:hover:not(:disabled) {
+  background: var(--te-surface-hover);
+}
+
+.te-note__display:focus-visible,
+.te-note__action:focus-visible,
+.te-note__textarea:focus-visible {
+  outline: 2px solid var(--te-accent);
+  outline-offset: -2px;
+}
+
+.te-note__display:disabled {
+  cursor: default;
+}
+
+.te-note__label {
+  flex: 0 0 auto;
+  color: var(--te-accent);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.te-note__text {
+  display: -webkit-box;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--te-text);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+[data-surface="hover-card"] .te-note__text {
+  -webkit-line-clamp: 2;
+}
+
+.te-note__text--empty {
+  color: var(--te-muted);
+}
+
+.te-note__edit-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  fill: var(--te-muted);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.te-note__display:hover .te-note__edit-icon,
+.te-note__display:focus-visible .te-note__edit-icon {
+  opacity: 1;
+}
+
+.te-note__editor {
+  padding: 10px 10px 9px 13px;
+}
+
+.te-note__editor-label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--te-text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.te-note__textarea {
+  display: block;
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  padding: 8px 9px;
+  border: 1px solid var(--te-border);
+  border-radius: 8px;
+  color: var(--te-text);
+  background: var(--te-field);
+  font-size: 14px;
+  line-height: 19px;
+}
+
+[data-surface="hover-card"] .te-note__textarea {
+  min-height: 76px;
+}
+
+.te-note__textarea:disabled {
+  opacity: 0.7;
+}
+
+.te-note__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.te-note__counter {
+  margin-right: auto;
+  color: var(--te-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+}
+
+.te-note__action {
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--te-border);
+  border-radius: 999px;
+  color: var(--te-text);
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 28px;
+}
+
+.te-note__action:hover:not(:disabled) {
+  background: var(--te-surface-hover);
+}
+
+.te-note__action:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.te-note__action--save {
+  border-color: var(--te-accent);
+  color: #ffffff;
+  background: var(--te-accent);
+}
+
+.te-note__action--save:hover:not(:disabled) {
+  background: #1a8cd8;
+}
+
+.te-note__action--delete {
+  border-color: transparent;
+  color: var(--te-danger);
+}
+
+.te-note__error {
+  margin: 7px 0 0;
+  color: var(--te-danger);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .te-note__display,
+  .te-note__edit-icon {
+    transition: none;
+  }
+}

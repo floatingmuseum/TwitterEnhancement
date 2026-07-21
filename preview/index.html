@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Twitter Enhancement UI Preview</title>
+    <link rel="stylesheet" href="/preview.css" />
+  </head>
+  <body data-theme="dark">
+    <header class="preview-toolbar">
+      <div>
+        <strong>Twitter Enhancement</strong>
+        <span>用户备注渲染预览</span>
+      </div>
+      <button id="theme-toggle" type="button">切换明暗主题</button>
+    </header>
+
+    <main class="preview-grid">
+      <section class="preview-panel">
+        <p class="preview-label">个人主页 · 3 行</p>
+        <article class="x-card x-profile">
+          <div class="x-banner"></div>
+          <div class="x-avatar">A</div>
+          <button class="x-follow" type="button">正在关注</button>
+          <div class="x-identity">
+            <strong>Alice Chen <span class="x-verified">✓</span></strong>
+            <span>@alice</span>
+          </div>
+          <div id="profile-note"></div>
+          <p class="x-bio">浏览器安全研究者，持续分享扩展开发、隐私保护与前端工程实践。</p>
+          <p class="x-meta">上海 · alice.example · 2020年5月加入</p>
+          <p class="x-stats"><strong>218</strong> 正在关注　<strong>18.4万</strong> 关注者</p>
+        </article>
+      </section>
+
+      <section class="preview-panel">
+        <p class="preview-label">悬浮卡片 · 2 行</p>
+        <article class="x-card x-hover-card">
+          <div class="x-hover-top">
+            <div class="x-avatar x-avatar--small">A</div>
+            <button class="x-follow" type="button">正在关注</button>
+          </div>
+          <div class="x-identity">
+            <strong>Alice Chen <span class="x-verified">✓</span></strong>
+            <span>@alice</span>
+          </div>
+          <div id="hover-note"></div>
+          <p class="x-bio">浏览器安全研究者，持续分享扩展开发、隐私保护与前端工程实践。</p>
+          <p class="x-stats"><strong>218</strong> 正在关注　<strong>18.4万</strong> 关注者</p>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="/main.tsx"></script>
+  </body>
+</html>

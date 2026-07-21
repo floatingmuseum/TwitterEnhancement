@@ -1,0 +1,14 @@
+# Dependencies and pnpm store
+node_modules/
+.pnpm-store/
+
+# WXT generated files and extension builds
+.wxt/
+.output/
+dist/
+
+# Test output
+coverage/
+
+# Logs
+*.log
