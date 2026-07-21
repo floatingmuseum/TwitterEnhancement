@@ -11,6 +11,13 @@ export interface UserNoteV1 {
   updatedAt: number;
 }
 
+export type NoteImportMode = 'replace' | 'add-missing';
+
+export interface NoteImportResult {
+  imported: number;
+  skipped: number;
+}
+
 export type UserNoteListener = (note: UserNoteV1 | null) => void;
 export type Unsubscribe = () => void;
 
@@ -19,6 +26,14 @@ export interface UserNoteRepository {
   save(handle: string, text: string): Promise<UserNoteV1>;
   delete(handle: string): Promise<void>;
   subscribe(handle: string, listener: UserNoteListener): Unsubscribe;
+}
+
+export interface UserNoteCollectionRepository extends UserNoteRepository {
+  getAll(): Promise<UserNoteV1[]>;
+  importNotes(
+    notes: readonly UserNoteV1[],
+    mode: NoteImportMode,
+  ): Promise<NoteImportResult>;
 }
 
 export class NoteValidationError extends Error {

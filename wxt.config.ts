@@ -8,5 +8,8 @@ export default defineConfig({
     name: 'Twitter Enhancement',
     description: '在 X / Twitter 用户主页和悬浮卡片中保存本地私人备注。',
     permissions: ['storage'],
+    action: {
+      default_title: '管理本地备注',
+    },
   },
 });

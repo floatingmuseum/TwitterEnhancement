@@ -4,9 +4,12 @@ import {
   normalizeNoteText,
   noteStorageKey,
   parseStoredNote,
+  NOTE_STORAGE_PREFIX,
+  type NoteImportMode,
+  type NoteImportResult,
   type Unsubscribe,
   type UserNoteListener,
-  type UserNoteRepository,
+  type UserNoteCollectionRepository,
   type UserNoteV1,
 } from '../../features/user-notes/note-model';
 
@@ -21,14 +24,14 @@ export type StorageChangeListener = (
 ) => void;
 
 export interface ExtensionLocalStorage {
-  get(key: string): Promise<Record<string, unknown>>;
+  get(key: string | null): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
-  remove(key: string): Promise<void>;
+  remove(key: string | string[]): Promise<void>;
   addChangeListener(listener: StorageChangeListener): void;
   removeChangeListener(listener: StorageChangeListener): void;
 }
 
-export class LocalUserNoteRepository implements UserNoteRepository {
+export class LocalUserNoteRepository implements UserNoteCollectionRepository {
   private readonly listeners = new Map<string, Set<UserNoteListener>>();
   private isListening = false;
 
@@ -60,6 +63,11 @@ export class LocalUserNoteRepository implements UserNoteRepository {
     return parseStoredNote(values[key], normalizedHandle);
   }
 
+  async getAll(): Promise<UserNoteV1[]> {
+    const values = await this.storage.get(null);
+    return readStoredNotes(values);
+  }
+
   async save(handle: string, text: string): Promise<UserNoteV1> {
     const normalizedHandle = normalizeHandle(handle);
     const normalizedText = normalizeNoteText(text);
@@ -81,6 +89,47 @@ export class LocalUserNoteRepository implements UserNoteRepository {
 
   async delete(handle: string): Promise<void> {
     await this.storage.remove(noteStorageKey(handle));
+  }
+
+  async importNotes(
+    notes: readonly UserNoteV1[],
+    mode: NoteImportMode,
+  ): Promise<NoteImportResult> {
+    const values = await this.storage.get(null);
+    const existingNotes = readStoredNotes(values);
+    const existingHandles = new Set(existingNotes.map((note) => note.handle));
+    const incomingByHandle = new Map(notes.map((note) => [note.handle, note]));
+    const notesToImport =
+      mode === 'replace'
+        ? [...incomingByHandle.values()]
+        : [...incomingByHandle.values()].filter(
+            (note) => !existingHandles.has(note.handle),
+          );
+
+    if (notesToImport.length > 0) {
+      await this.storage.set(
+        Object.fromEntries(
+          notesToImport.map((note) => [noteStorageKey(note.handle), note]),
+        ),
+      );
+    }
+
+    if (mode === 'replace') {
+      const importedKeys = new Set(
+        notesToImport.map((note) => noteStorageKey(note.handle)),
+      );
+      const obsoleteKeys = Object.keys(values).filter(
+        (key) => key.startsWith(NOTE_STORAGE_PREFIX) && !importedKeys.has(key),
+      );
+      if (obsoleteKeys.length > 0) {
+        await this.storage.remove(obsoleteKeys);
+      }
+    }
+
+    return {
+      imported: notesToImport.length,
+      skipped: incomingByHandle.size - notesToImport.length,
+    };
   }
 
   subscribe(handle: string, listener: UserNoteListener): Unsubscribe {
@@ -107,4 +156,26 @@ export class LocalUserNoteRepository implements UserNoteRepository {
       }
     };
   }
+}
+
+function readStoredNotes(values: Record<string, unknown>): UserNoteV1[] {
+  const notes: UserNoteV1[] = [];
+
+  for (const [key, value] of Object.entries(values)) {
+    if (!key.startsWith(NOTE_STORAGE_PREFIX)) {
+      continue;
+    }
+
+    const handle = key.slice(NOTE_STORAGE_PREFIX.length);
+    try {
+      const note = parseStoredNote(value, handle);
+      if (note) {
+        notes.push(note);
+      }
+    } catch {
+      // Ignore unrelated or malformed keys under the versioned prefix.
+    }
+  }
+
+  return notes.sort((left, right) => right.updatedAt - left.updatedAt);
 }

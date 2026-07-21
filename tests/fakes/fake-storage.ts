@@ -8,7 +8,11 @@ export class FakeExtensionLocalStorage implements ExtensionLocalStorage {
   readonly values = new Map<string, unknown>();
   readonly listeners = new Set<StorageChangeListener>();
 
-  async get(key: string): Promise<Record<string, unknown>> {
+  async get(key: string | null): Promise<Record<string, unknown>> {
+    if (key === null) {
+      return Object.fromEntries(this.values);
+    }
+
     return this.values.has(key) ? { [key]: this.values.get(key) } : {};
   }
 
@@ -23,10 +27,17 @@ export class FakeExtensionLocalStorage implements ExtensionLocalStorage {
     this.emit(changes);
   }
 
-  async remove(key: string): Promise<void> {
-    const oldValue = this.values.get(key);
-    this.values.delete(key);
-    this.emit({ [key]: { oldValue } });
+  async remove(key: string | string[]): Promise<void> {
+    const keys = Array.isArray(key) ? key : [key];
+    const changes: Record<string, StorageChange> = {};
+
+    for (const storageKey of keys) {
+      const oldValue = this.values.get(storageKey);
+      this.values.delete(storageKey);
+      changes[storageKey] = { oldValue };
+    }
+
+    this.emit(changes);
   }
 
   addChangeListener(listener: StorageChangeListener): void {
