@@ -8,9 +8,10 @@ describe('LocalUserNoteRepository', () => {
     const storage = new FakeExtensionLocalStorage();
     const repository = new LocalUserNoteRepository(storage);
 
-    await expect(repository.save('@Alice', '  关注原因  ')).resolves.toEqual({
+    await expect(repository.save('@Alice', '  关注原因  ', ' Alice ')).resolves.toEqual({
       version: 1,
       handle: 'alice',
+      displayName: 'Alice',
       text: '关注原因',
       updatedAt: 1_234,
     });
@@ -18,6 +19,25 @@ describe('LocalUserNoteRepository', () => {
 
     await repository.delete('alice');
     await expect(repository.get('alice')).resolves.toBeNull();
+  });
+
+  it('updates a changed display name during lookup and advances updatedAt', async () => {
+    vi.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValue(2_000);
+    const storage = new FakeExtensionLocalStorage();
+    const repository = new LocalUserNoteRepository(storage);
+    await repository.save('alice', '备注', 'Alice');
+
+    await expect(repository.get('alice', 'Alice Updated')).resolves.toEqual({
+      version: 1,
+      handle: 'alice',
+      displayName: 'Alice Updated',
+      text: '备注',
+      updatedAt: 2_000,
+    });
+    await expect(repository.get('alice')).resolves.toMatchObject({
+      displayName: 'Alice Updated',
+      updatedAt: 2_000,
+    });
   });
 
   it('publishes local storage changes and removes the shared listener when unused', async () => {
@@ -92,21 +112,38 @@ describe('LocalUserNoteRepository', () => {
     expect(storage.values.get('unrelated')).toBe('keep me');
   });
 
-  it('adds only handles that are missing from the existing list', async () => {
+  it('adds missing handles and overwrites the same handle only when newer', async () => {
     const storage = new FakeExtensionLocalStorage();
     const repository = new LocalUserNoteRepository(storage);
-    await repository.save('alice', '保留原备注');
+    await repository.importNotes(
+      [{ version: 1, handle: 'alice', text: '较旧的本地备注', updatedAt: 200 }],
+      'replace',
+    );
 
     await expect(
       repository.importNotes(
         [
-          { version: 1, handle: 'alice', text: '不覆盖', updatedAt: 300 },
+          { version: 1, handle: 'alice', text: '较新的导入备注', updatedAt: 300 },
           { version: 1, handle: 'bob', text: '新增', updatedAt: 400 },
         ],
         'add-missing',
       ),
-    ).resolves.toEqual({ imported: 1, skipped: 1 });
-    await expect(repository.get('alice')).resolves.toMatchObject({ text: '保留原备注' });
+    ).resolves.toEqual({ imported: 2, skipped: 0 });
+    await expect(repository.get('alice')).resolves.toMatchObject({
+      text: '较新的导入备注',
+      updatedAt: 300,
+    });
     await expect(repository.get('bob')).resolves.toMatchObject({ text: '新增' });
+
+    await expect(
+      repository.importNotes(
+        [{ version: 1, handle: 'alice', text: '不能回退', updatedAt: 250 }],
+        'add-missing',
+      ),
+    ).resolves.toEqual({ imported: 0, skipped: 1 });
+    await expect(repository.get('alice')).resolves.toMatchObject({
+      text: '较新的导入备注',
+      updatedAt: 300,
+    });
   });
 });

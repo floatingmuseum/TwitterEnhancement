@@ -17,12 +17,13 @@ export type NoteSurface = 'profile' | 'hover-card';
 
 interface UserNoteProps {
   handle: string;
+  displayName?: string;
   surface: NoteSurface;
   repository: UserNoteRepository;
 }
 
-export function UserNote({ handle, surface, repository }: UserNoteProps) {
-  const { note, loadError, reload } = useUserNote(repository, handle);
+export function UserNote({ handle, displayName, surface, repository }: UserNoteProps) {
+  const { note, loadError, reload } = useUserNote(repository, handle, displayName);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [draft, setDraft] = useState('');
@@ -75,7 +76,7 @@ export function UserNote({ handle, surface, repository }: UserNoteProps) {
       if (text.length === 0) {
         await repository.delete(handle);
       } else {
-        await repository.save(handle, text);
+        await repository.save(handle, text, displayName);
       }
       finishEditing();
     } catch {

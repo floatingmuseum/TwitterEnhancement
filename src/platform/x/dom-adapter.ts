@@ -1,9 +1,13 @@
-import { normalizeHandle } from '../../features/user-notes/note-model';
+import {
+  normalizeDisplayName,
+  normalizeHandle,
+} from '../../features/user-notes/note-model';
 import type { NoteSurface } from '../../features/user-notes/UserNote';
 
 export interface XNoteSurfaceTarget {
   anchor: HTMLElement;
   handle: string;
+  displayName: string | null;
   surface: NoteSurface;
 }
 
@@ -62,6 +66,44 @@ function handleFromExactText(element: Element): string | null {
   return match?.[1] ? safeNormalizeHandle(match[1]) : null;
 }
 
+function linkReferencesHandle(link: HTMLAnchorElement, handle: string): boolean {
+  try {
+    const url = new URL(link.getAttribute('href') ?? '', 'https://x.com');
+    const firstSegment = url.pathname.split('/').filter(Boolean)[0];
+    return firstSegment ? safeNormalizeHandle(firstSegment) === handle : false;
+  } catch {
+    return false;
+  }
+}
+
+export function extractDisplayNameFromElement(
+  element: Element,
+  handle: string,
+): string | null {
+  const normalizedHandle = safeNormalizeHandle(handle);
+  if (!normalizedHandle) {
+    return null;
+  }
+
+  const links = element.querySelectorAll<HTMLAnchorElement>('a[href]');
+  for (const link of links) {
+    if (
+      !linkReferencesHandle(link, normalizedHandle) ||
+      handleFromExactText(link) === normalizedHandle
+    ) {
+      continue;
+    }
+
+    try {
+      return normalizeDisplayName(link.textContent ?? '');
+    } catch {
+      // Continue looking for another name link in the identity block.
+    }
+  }
+
+  return null;
+}
+
 export function extractHandleFromElement(element: Element): string | null {
   const links = element.querySelectorAll<HTMLAnchorElement>('a[href]');
 
@@ -114,6 +156,7 @@ function findProfileTarget(root: ParentNode, url: URL): XNoteSurfaceTarget | nul
   return {
     anchor: userName,
     handle: expectedHandle,
+    displayName: extractDisplayNameFromElement(userName, expectedHandle),
     surface: 'profile',
   };
 }
@@ -138,7 +181,12 @@ function findHoverCardTargets(root: ParentNode): XNoteSurfaceTarget[] {
       continue;
     }
 
-    targets.push({ anchor, handle, surface: 'hover-card' });
+    targets.push({
+      anchor,
+      handle,
+      displayName: extractDisplayNameFromElement(card, handle),
+      surface: 'hover-card',
+    });
   }
 
   return targets;

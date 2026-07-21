@@ -383,6 +383,23 @@ input:focus-visible {
   gap: 10px;
 }
 
+.note-identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.note-identity strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 720;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .avatar-letter {
   display: grid;
   width: 32px;
@@ -399,9 +416,9 @@ input:focus-visible {
 
 .note-handle a {
   overflow: hidden;
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 700;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 560;
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;

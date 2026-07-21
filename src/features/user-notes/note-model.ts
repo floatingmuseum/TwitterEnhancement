@@ -1,12 +1,14 @@
 export const NOTE_SCHEMA_VERSION = 1 as const;
 export const NOTE_STORAGE_PREFIX = 'twitter-enhancement:note:v1:';
 export const MAX_NOTE_CHARACTERS = 500;
+export const MAX_DISPLAY_NAME_CHARACTERS = 100;
 
 const HANDLE_PATTERN = /^[a-z0-9_]{1,15}$/i;
 
 export interface UserNoteV1 {
   version: typeof NOTE_SCHEMA_VERSION;
   handle: string;
+  displayName?: string;
   text: string;
   updatedAt: number;
 }
@@ -22,8 +24,8 @@ export type UserNoteListener = (note: UserNoteV1 | null) => void;
 export type Unsubscribe = () => void;
 
 export interface UserNoteRepository {
-  get(handle: string): Promise<UserNoteV1 | null>;
-  save(handle: string, text: string): Promise<UserNoteV1>;
+  get(handle: string, observedDisplayName?: string): Promise<UserNoteV1 | null>;
+  save(handle: string, text: string, displayName?: string): Promise<UserNoteV1>;
   delete(handle: string): Promise<void>;
   subscribe(handle: string, listener: UserNoteListener): Unsubscribe;
 }
@@ -48,6 +50,22 @@ export function normalizeHandle(handle: string): string {
 
   if (!HANDLE_PATTERN.test(normalized)) {
     throw new NoteValidationError('无效的 X 用户名');
+  }
+
+  return normalized;
+}
+
+export function normalizeDisplayName(displayName: string): string {
+  const normalized = displayName.trim();
+
+  if (normalized.length === 0) {
+    throw new NoteValidationError('显示名称不能为空');
+  }
+
+  if (countCharacters(normalized) > MAX_DISPLAY_NAME_CHARACTERS) {
+    throw new NoteValidationError(
+      `显示名称不能超过 ${MAX_DISPLAY_NAME_CHARACTERS} 个字符`,
+    );
   }
 
   return normalized;
@@ -85,6 +103,19 @@ export function parseStoredNote(value: unknown, expectedHandle: string): UserNot
 
   const candidate = value as Partial<UserNoteV1>;
   const handle = normalizeHandle(expectedHandle);
+  let displayName: string | undefined;
+
+  if (candidate.displayName !== undefined) {
+    if (typeof candidate.displayName !== 'string') {
+      return null;
+    }
+
+    try {
+      displayName = normalizeDisplayName(candidate.displayName);
+    } catch {
+      return null;
+    }
+  }
 
   if (
     candidate.version !== NOTE_SCHEMA_VERSION ||
@@ -101,6 +132,7 @@ export function parseStoredNote(value: unknown, expectedHandle: string): UserNot
   return {
     version: NOTE_SCHEMA_VERSION,
     handle,
+    ...(displayName ? { displayName } : {}),
     text: candidate.text,
     updatedAt: candidate.updatedAt,
   };

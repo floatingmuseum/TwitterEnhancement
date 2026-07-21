@@ -1,5 +1,6 @@
 import {
   NOTE_SCHEMA_VERSION,
+  normalizeDisplayName,
   normalizeHandle,
   normalizeNoteText,
   noteStorageKey,
@@ -56,11 +57,24 @@ export class LocalUserNoteRepository implements UserNoteCollectionRepository {
 
   constructor(private readonly storage: ExtensionLocalStorage) {}
 
-  async get(handle: string): Promise<UserNoteV1 | null> {
+  async get(handle: string, observedDisplayName?: string): Promise<UserNoteV1 | null> {
     const normalizedHandle = normalizeHandle(handle);
     const key = noteStorageKey(normalizedHandle);
     const values = await this.storage.get(key);
-    return parseStoredNote(values[key], normalizedHandle);
+    const note = parseStoredNote(values[key], normalizedHandle);
+    const displayName = safeNormalizeDisplayName(observedDisplayName);
+
+    if (!note || !displayName || note.displayName === displayName) {
+      return note;
+    }
+
+    const updatedNote: UserNoteV1 = {
+      ...note,
+      displayName,
+      updatedAt: nextUpdatedAt(note.updatedAt),
+    };
+    await this.storage.set({ [key]: updatedNote });
+    return updatedNote;
   }
 
   async getAll(): Promise<UserNoteV1[]> {
@@ -68,7 +82,7 @@ export class LocalUserNoteRepository implements UserNoteCollectionRepository {
     return readStoredNotes(values);
   }
 
-  async save(handle: string, text: string): Promise<UserNoteV1> {
+  async save(handle: string, text: string, displayName?: string): Promise<UserNoteV1> {
     const normalizedHandle = normalizeHandle(handle);
     const normalizedText = normalizeNoteText(text);
 
@@ -76,11 +90,15 @@ export class LocalUserNoteRepository implements UserNoteCollectionRepository {
       throw new Error('空备注应通过 delete 删除');
     }
 
+    const currentNote = await this.get(normalizedHandle);
+    const normalizedDisplayName =
+      safeNormalizeDisplayName(displayName) ?? currentNote?.displayName;
     const note: UserNoteV1 = {
       version: NOTE_SCHEMA_VERSION,
       handle: normalizedHandle,
+      ...(normalizedDisplayName ? { displayName: normalizedDisplayName } : {}),
       text: normalizedText,
-      updatedAt: Date.now(),
+      updatedAt: nextUpdatedAt(currentNote?.updatedAt),
     };
 
     await this.storage.set({ [noteStorageKey(normalizedHandle)]: note });
@@ -97,13 +115,16 @@ export class LocalUserNoteRepository implements UserNoteCollectionRepository {
   ): Promise<NoteImportResult> {
     const values = await this.storage.get(null);
     const existingNotes = readStoredNotes(values);
-    const existingHandles = new Set(existingNotes.map((note) => note.handle));
-    const incomingByHandle = new Map(notes.map((note) => [note.handle, note]));
+    const existingByHandle = new Map(existingNotes.map((note) => [note.handle, note]));
+    const incomingByHandle = selectNewestNotes(notes);
     const notesToImport =
       mode === 'replace'
         ? [...incomingByHandle.values()]
         : [...incomingByHandle.values()].filter(
-            (note) => !existingHandles.has(note.handle),
+            (note) => {
+              const existingNote = existingByHandle.get(note.handle);
+              return !existingNote || note.updatedAt > existingNote.updatedAt;
+            },
           );
 
     if (notesToImport.length > 0) {
@@ -156,6 +177,35 @@ export class LocalUserNoteRepository implements UserNoteCollectionRepository {
       }
     };
   }
+}
+
+function safeNormalizeDisplayName(displayName?: string): string | undefined {
+  if (!displayName) {
+    return undefined;
+  }
+
+  try {
+    return normalizeDisplayName(displayName);
+  } catch {
+    return undefined;
+  }
+}
+
+function nextUpdatedAt(previousUpdatedAt?: number): number {
+  return Math.max(Date.now(), (previousUpdatedAt ?? -1) + 1);
+}
+
+function selectNewestNotes(notes: readonly UserNoteV1[]): Map<string, UserNoteV1> {
+  const newestByHandle = new Map<string, UserNoteV1>();
+
+  for (const note of notes) {
+    const current = newestByHandle.get(note.handle);
+    if (!current || note.updatedAt > current.updatedAt) {
+      newestByHandle.set(note.handle, note);
+    }
+  }
+
+  return newestByHandle;
 }
 
 function readStoredNotes(values: Record<string, unknown>): UserNoteV1[] {

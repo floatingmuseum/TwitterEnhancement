@@ -8,6 +8,7 @@ import {
 const aliceNote = {
   version: 1 as const,
   handle: 'alice',
+  displayName: 'Alice',
   text: '产品设计',
   updatedAt: 100,
 };
@@ -25,10 +26,10 @@ describe('note transfer', () => {
     expect(parseNoteImport(JSON.stringify(file))).toEqual([aliceNote]);
   });
 
-  it('deduplicates handles using the last occurrence', () => {
+  it('deduplicates handles using updatedAt even when the older record is last', () => {
     const file = createNoteExport([
-      aliceNote,
       { ...aliceNote, text: '更新后的备注', updatedAt: 200 },
+      aliceNote,
     ]);
 
     expect(parseNoteImport(JSON.stringify(file))).toEqual([

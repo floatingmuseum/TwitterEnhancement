@@ -65,6 +65,7 @@ export function mountXNoteUi(target: XNoteSurfaceTarget): MountedXNoteSurface {
   root.render(
     <UserNote
       handle={target.handle}
+      displayName={target.displayName ?? undefined}
       surface={target.surface}
       repository={userNoteRepository}
     />,

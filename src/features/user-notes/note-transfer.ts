@@ -65,7 +65,10 @@ export function parseNoteImport(source: string): UserNoteV1[] {
     if (!note) {
       throw new NoteImportFileError(`第 ${index + 1} 条备注无效`);
     }
-    notesByHandle.set(note.handle, note);
+    const current = notesByHandle.get(note.handle);
+    if (!current || note.updatedAt > current.updatedAt) {
+      notesByHandle.set(note.handle, note);
+    }
   }
 
   return [...notesByHandle.values()];

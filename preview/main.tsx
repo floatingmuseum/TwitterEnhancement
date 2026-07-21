@@ -16,8 +16,14 @@ class PreviewNoteRepository implements UserNoteRepository {
     return this.note;
   }
 
-  async save(handle: string, text: string): Promise<UserNoteV1> {
-    this.note = { version: 1, handle, text: text.trim(), updatedAt: Date.now() };
+  async save(handle: string, text: string, displayName?: string): Promise<UserNoteV1> {
+    this.note = {
+      version: 1,
+      handle,
+      ...(displayName ? { displayName } : {}),
+      text: text.trim(),
+      updatedAt: Date.now(),
+    };
     this.publish();
     return this.note;
   }
@@ -55,7 +61,12 @@ function mountPreview(id: string, surface: NoteSurface) {
   const container = document.createElement('div');
   shadow.append(style, container);
   ReactDOM.createRoot(container).render(
-    <UserNote handle="alice" surface={surface} repository={repository} />,
+    <UserNote
+      handle="alice"
+      displayName="Alice"
+      surface={surface}
+      repository={repository}
+    />,
   );
   hosts.push(host);
 }

@@ -18,12 +18,18 @@ class FakeUserNoteRepository implements UserNoteRepository {
     return this.note;
   }
 
-  async save(handle: string, text: string): Promise<UserNoteV1> {
+  async save(handle: string, text: string, displayName?: string): Promise<UserNoteV1> {
     if (this.failSave) {
       throw new Error('storage unavailable');
     }
 
-    this.note = { version: 1, handle, text: text.trim(), updatedAt: 1 };
+    this.note = {
+      version: 1,
+      handle,
+      ...(displayName ? { displayName } : {}),
+      text: text.trim(),
+      updatedAt: 1,
+    };
     this.emit();
     return this.note;
   }
@@ -59,7 +65,14 @@ describe('UserNote', () => {
   it('creates an empty note and saves it with Ctrl+Enter', async () => {
     const user = userEvent.setup();
     const repository = new FakeUserNoteRepository();
-    render(<UserNote handle="alice" surface="profile" repository={repository} />);
+    render(
+      <UserNote
+        handle="alice"
+        displayName="Alice"
+        surface="profile"
+        repository={repository}
+      />,
+    );
 
     const displayButton = await getReadyDisplayButton();
     expect(screen.getByText('无备注')).toBeInTheDocument();
@@ -71,6 +84,7 @@ describe('UserNote', () => {
 
     expect(await screen.findByText('因为她持续分享浏览器安全研究')).toBeInTheDocument();
     expect(repository.note?.text).toBe('因为她持续分享浏览器安全研究');
+    expect(repository.note?.displayName).toBe('Alice');
   });
 
   it('cancels with Escape and restores focus without changing the note', async () => {

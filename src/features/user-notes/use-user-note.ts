@@ -10,6 +10,7 @@ interface UserNoteState {
 export function useUserNote(
   repository: UserNoteRepository,
   handle: string,
+  displayName?: string,
 ): UserNoteState {
   const [note, setNote] = useState<UserNoteV1 | null | undefined>(undefined);
   const [loadError, setLoadError] = useState(false);
@@ -32,7 +33,7 @@ export function useUserNote(
     });
 
     void repository
-      .get(handle)
+      .get(handle, displayName)
       .then((nextNote) => {
         if (active) {
           setNote(nextNote);
@@ -49,7 +50,7 @@ export function useUserNote(
       active = false;
       unsubscribe();
     };
-  }, [handle, reloadToken, repository]);
+  }, [displayName, handle, reloadToken, repository]);
 
   return { note, loadError, reload };
 }

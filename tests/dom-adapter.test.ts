@@ -1,4 +1,5 @@
 import {
+  extractDisplayNameFromElement,
   extractHandleFromElement,
   findXNoteSurfaceTargets,
 } from '../src/platform/x/dom-adapter';
@@ -25,7 +26,11 @@ describe('X DOM adapter', () => {
 
     const targets = findXNoteSurfaceTargets(document, new URL('https://x.com/Alice'));
     expect(targets).toHaveLength(1);
-    expect(targets[0]).toMatchObject({ handle: 'alice', surface: 'profile' });
+    expect(targets[0]).toMatchObject({
+      handle: 'alice',
+      displayName: 'Alice',
+      surface: 'profile',
+    });
     expect(targets[0]?.anchor).toHaveAttribute('data-testid', 'UserName');
   });
 
@@ -59,12 +64,26 @@ describe('X DOM adapter', () => {
 
     const targets = findXNoteSurfaceTargets(document, new URL('https://x.com/home'));
     expect(targets).toHaveLength(1);
-    expect(targets[0]).toMatchObject({ handle: 'bob', surface: 'hover-card' });
+    expect(targets[0]).toMatchObject({
+      handle: 'bob',
+      displayName: 'Bob',
+      surface: 'hover-card',
+    });
   });
 
   it('extracts a handle from an exact nested text node', () => {
     const element = document.createElement('div');
     element.innerHTML = '<span>Display name</span><div><span>@CaseSensitive</span></div>';
     expect(extractHandleFromElement(element)).toBe('casesensitive');
+  });
+
+  it('extracts the display name from the profile link instead of the handle', () => {
+    const element = document.createElement('div');
+    element.innerHTML = `
+      <a href="/Alice"><span>Alice New Name</span></a>
+      <a href="/Alice"><span>@Alice</span></a>
+    `;
+
+    expect(extractDisplayNameFromElement(element, 'alice')).toBe('Alice New Name');
   });
 });

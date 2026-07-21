@@ -65,17 +65,21 @@ export function NoteSettingsPage({ repository }: NoteSettingsPageProps) {
     return (notes ?? []).filter(
       (note) =>
         note.handle.includes(normalizedQuery) ||
+        note.displayName?.toLocaleLowerCase().includes(normalizedQuery) ||
         note.text.toLocaleLowerCase().includes(normalizedQuery),
     );
   }, [notes, query]);
 
-  const pendingNewCount = useMemo(() => {
+  const pendingWriteCount = useMemo(() => {
     if (!pendingImport) {
       return 0;
     }
 
-    const existingHandles = new Set((notes ?? []).map((note) => note.handle));
-    return pendingImport.notes.filter((note) => !existingHandles.has(note.handle)).length;
+    const existingByHandle = new Map((notes ?? []).map((note) => [note.handle, note]));
+    return pendingImport.notes.filter((note) => {
+      const existingNote = existingByHandle.get(note.handle);
+      return !existingNote || note.updatedAt > existingNote.updatedAt;
+    }).length;
   }, [notes, pendingImport]);
 
   async function selectImportFile(event: React.ChangeEvent<HTMLInputElement>) {
@@ -114,7 +118,7 @@ export function NoteSettingsPage({ repository }: NoteSettingsPageProps) {
         message:
           mode === 'replace'
             ? `已用 ${result.imported} 条备注替换本地列表。`
-            : `已新增 ${result.imported} 条备注，跳过 ${result.skipped} 条已有备注。`,
+            : `已写入 ${result.imported} 条较新备注，跳过 ${result.skipped} 条旧备注。`,
       });
     } catch {
       setNotice({ kind: 'error', message: '导入失败，本地备注未能完成更新。' });
@@ -211,7 +215,7 @@ export function NoteSettingsPage({ repository }: NoteSettingsPageProps) {
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索用户名或备注内容"
+                placeholder="搜索显示名称、用户名或备注"
               />
             </label>
           </div>
@@ -240,11 +244,16 @@ export function NoteSettingsPage({ repository }: NoteSettingsPageProps) {
                 <li key={note.handle} className="note-row">
                   <div className="note-handle">
                     <span className="avatar-letter" aria-hidden="true">
-                      {note.handle.charAt(0).toUpperCase()}
+                      {(note.displayName ?? note.handle).charAt(0).toUpperCase()}
                     </span>
-                    <a href={`https://x.com/${note.handle}`} target="_blank" rel="noreferrer">
-                      @{note.handle}
-                    </a>
+                    <div className="note-identity">
+                      {note.displayName ? (
+                        <strong title={note.displayName}>{note.displayName}</strong>
+                      ) : null}
+                      <a href={`https://x.com/${note.handle}`} target="_blank" rel="noreferrer">
+                        @{note.handle}
+                      </a>
+                    </div>
                   </div>
                   <p>{note.text}</p>
                   <time dateTime={new Date(note.updatedAt).toISOString()}>
@@ -304,8 +313,8 @@ export function NoteSettingsPage({ repository }: NoteSettingsPageProps) {
                 onClick={() => void importPendingNotes('add-missing')}
               >
                 <span className="choice-title">增补导入</span>
-                <span className="choice-description">保留已有备注，只加入列表中不存在的用户。</span>
-                <span className="choice-result">预计新增 {pendingNewCount} 条</span>
+                <span className="choice-description">新增不存在的用户；同一用户名只在导入记录更新时间更晚时覆盖。</span>
+                <span className="choice-result">预计写入 {pendingWriteCount} 条</span>
               </button>
               <button
                 type="button"

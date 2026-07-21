@@ -2,6 +2,7 @@ import {
   MAX_NOTE_CHARACTERS,
   NoteValidationError,
   countCharacters,
+  normalizeDisplayName,
   normalizeHandle,
   normalizeNoteText,
   noteStorageKey,
@@ -30,6 +31,7 @@ describe('note model', () => {
 
   it('trims the note while preserving internal line breaks', () => {
     expect(normalizeNoteText('  第一行\n第二行  ')).toBe('第一行\n第二行');
+    expect(normalizeDisplayName('  Alice 😀  ')).toBe('Alice 😀');
   });
 
   it('rejects text over the limit and ignores malformed stored data', () => {
@@ -39,9 +41,30 @@ describe('note model', () => {
     expect(parseStoredNote({ version: 2 }, 'alice')).toBeNull();
     expect(
       parseStoredNote(
-        { version: 1, handle: 'alice', text: '原因', updatedAt: 42 },
+        {
+          version: 1,
+          handle: 'alice',
+          displayName: 'Alice',
+          text: '原因',
+          updatedAt: 42,
+        },
         'alice',
       ),
-    ).toEqual({ version: 1, handle: 'alice', text: '原因', updatedAt: 42 });
+    ).toEqual({
+      version: 1,
+      handle: 'alice',
+      displayName: 'Alice',
+      text: '原因',
+      updatedAt: 42,
+    });
+  });
+
+  it('keeps legacy notes without a display name readable', () => {
+    expect(
+      parseStoredNote(
+        { version: 1, handle: 'alice', text: '旧数据', updatedAt: 42 },
+        'alice',
+      ),
+    ).toEqual({ version: 1, handle: 'alice', text: '旧数据', updatedAt: 42 });
   });
 });
