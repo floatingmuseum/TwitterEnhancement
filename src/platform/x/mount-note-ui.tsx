@@ -4,46 +4,7 @@ import { UserNote } from '../../features/user-notes/UserNote';
 import { userNoteRepository } from '../../shared/storage/browser-user-note-repository';
 import type { XNoteSurfaceTarget } from './dom-adapter';
 import type { MountedXNoteSurface } from './surface-mount-manager';
-
-function parseVisibleRgb(color: string): [number, number, number] | null {
-  const match = color.match(
-    /rgba?\(\s*(\d+)\D+(\d+)\D+(\d+)(?:\s*[,/]\s*([\d.]+%?))?/i,
-  );
-  if (!match?.[1] || !match[2] || !match[3]) {
-    return null;
-  }
-
-  const alphaText = match[4];
-  const alpha = alphaText?.endsWith('%')
-    ? Number(alphaText.slice(0, -1)) / 100
-    : Number(alphaText ?? 1);
-  if (!Number.isFinite(alpha) || alpha <= 0.05) {
-    return null;
-  }
-
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
-function isDarkPage(): boolean {
-  const colorScheme = getComputedStyle(document.documentElement).colorScheme;
-  if (colorScheme.includes('dark') && !colorScheme.includes('light')) {
-    return true;
-  }
-
-  const candidates = [document.body, document.documentElement];
-  for (const element of candidates) {
-    const rgb = parseVisibleRgb(getComputedStyle(element).backgroundColor);
-    if (!rgb) {
-      continue;
-    }
-
-    const [red, green, blue] = rgb;
-    const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-    return luminance < 128;
-  }
-
-  return matchMedia('(prefers-color-scheme: dark)').matches;
-}
+import { isDarkXPage } from './theme';
 
 export function mountXNoteUi(target: XNoteSurfaceTarget): MountedXNoteSurface {
   const host = document.createElement('div');
@@ -72,7 +33,7 @@ export function mountXNoteUi(target: XNoteSurfaceTarget): MountedXNoteSurface {
   );
 
   function updateAppearance() {
-    host.dataset.teTheme = isDarkPage() ? 'dark' : 'light';
+    host.dataset.teTheme = isDarkXPage() ? 'dark' : 'light';
   }
 
   updateAppearance();

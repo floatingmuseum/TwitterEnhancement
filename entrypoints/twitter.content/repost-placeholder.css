@@ -1,0 +1,117 @@
+:host {
+  --te-placeholder-bg: #ffffff;
+  --te-placeholder-hover: rgba(15, 20, 25, 0.08);
+  --te-placeholder-muted: #536471;
+  --te-placeholder-line: #c7d0d7;
+  display: block;
+  width: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+:host([data-te-theme="dark"]) {
+  --te-placeholder-bg: #000000;
+  --te-placeholder-hover: rgba(239, 243, 244, 0.08);
+  --te-placeholder-muted: #71767b;
+  --te-placeholder-line: #2f3336;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.te-repost-placeholder {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  border: 0;
+  color: var(--te-placeholder-muted);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.te-repost-placeholder:focus-visible {
+  outline: 2px solid #1d9bf0;
+  outline-offset: -2px;
+}
+
+.te-repost-placeholder--divider {
+  height: 25px;
+  justify-content: center;
+  padding: 0 16px;
+}
+
+.te-repost-placeholder--divider::before {
+  position: absolute;
+  right: 16px;
+  left: 16px;
+  height: 1px;
+  background: var(--te-placeholder-line);
+  content: "";
+}
+
+.te-repost-placeholder--divider .te-repost-placeholder__content {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--te-placeholder-bg);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 16px;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.te-repost-placeholder--divider:hover .te-repost-placeholder__content,
+.te-repost-placeholder--divider:focus-visible .te-repost-placeholder__content {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.te-repost-placeholder--context {
+  min-height: 34px;
+  justify-content: flex-start;
+  padding: 6px 32px;
+  transition: background-color 120ms ease;
+}
+
+.te-repost-placeholder--context:hover {
+  background: var(--te-placeholder-hover);
+}
+
+.te-repost-placeholder--context .te-repost-placeholder__content {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 18px;
+}
+
+.te-repost-placeholder__icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: currentColor;
+}
+
+.te-repost-placeholder__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .te-repost-placeholder,
+  .te-repost-placeholder__content {
+    transition: none;
+  }
+}

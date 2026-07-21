@@ -6,7 +6,7 @@ export default defineConfig({
   outDirTemplate: '.',
   manifest: {
     name: 'Twitter Enhancement',
-    description: '在 X / Twitter 用户主页和悬浮卡片中保存本地私人备注。',
+    description: '为 X / Twitter 提供本地私人备注和列表页纯转贴过滤。',
     permissions: ['storage'],
     action: {
       default_title: '管理本地备注',

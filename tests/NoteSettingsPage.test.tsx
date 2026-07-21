@@ -1,13 +1,19 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NoteSettingsPage } from '../src/features/user-notes/NoteSettingsPage';
+import {
+  HIDDEN_REPOST_DISPLAY_MODE_STORAGE_KEY,
+  LocalListRepostPreferenceRepository,
+} from '../src/shared/storage/list-repost-preference-repository';
 import { LocalUserNoteRepository } from '../src/shared/storage/user-note-repository';
 import { FakeExtensionLocalStorage } from './fakes/fake-storage';
 
 describe('NoteSettingsPage', () => {
   it('lists local notes and searches display names, handles, and note text', async () => {
     const user = userEvent.setup();
-    const repository = new LocalUserNoteRepository(new FakeExtensionLocalStorage());
+    const storage = new FakeExtensionLocalStorage();
+    const repository = new LocalUserNoteRepository(storage);
+    const listRepostRepository = new LocalListRepostPreferenceRepository(storage);
     await repository.importNotes(
       [
         {
@@ -28,7 +34,12 @@ describe('NoteSettingsPage', () => {
       'replace',
     );
 
-    render(<NoteSettingsPage repository={repository} />);
+    render(
+      <NoteSettingsPage
+        repository={repository}
+        listRepostRepository={listRepostRepository}
+      />,
+    );
 
     expect(await screen.findByText('@alice')).toBeInTheDocument();
     expect(screen.getByText('@bob')).toBeInTheDocument();
@@ -48,5 +59,30 @@ describe('NoteSettingsPage', () => {
     await user.type(screen.getByRole('searchbox', { name: '搜索备注' }), 'Bob Li');
     expect(screen.queryByText('@alice')).not.toBeInTheDocument();
     expect(screen.getByText('@bob')).toBeInTheDocument();
+  });
+
+  it('selects and persists the hidden repost display mode', async () => {
+    const user = userEvent.setup();
+    const storage = new FakeExtensionLocalStorage();
+    const repository = new LocalUserNoteRepository(storage);
+    const listRepostRepository = new LocalListRepostPreferenceRepository(storage);
+
+    render(
+      <NoteSettingsPage
+        repository={repository}
+        listRepostRepository={listRepostRepository}
+      />,
+    );
+
+    const hiddenMode = await screen.findByRole('radio', { name: /完全隐藏/ });
+    const dividerMode = screen.getByRole('radio', { name: /灰线提示/ });
+    expect(hiddenMode).toBeChecked();
+
+    await user.click(dividerMode);
+
+    expect(dividerMode).toBeChecked();
+    expect(storage.values.get(HIDDEN_REPOST_DISPLAY_MODE_STORAGE_KEY)).toBe(
+      'divider',
+    );
   });
 });

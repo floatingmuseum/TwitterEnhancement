@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ListRepostSettings } from '../list-reposts/ListRepostSettings';
+import type { ListRepostPreferenceRepository } from '../list-reposts/list-repost-preference';
 import type {
   NoteImportMode,
   UserNoteCollectionRepository,
@@ -18,9 +20,13 @@ interface Notice {
 
 interface NoteSettingsPageProps {
   repository: UserNoteCollectionRepository;
+  listRepostRepository: ListRepostPreferenceRepository;
 }
 
-export function NoteSettingsPage({ repository }: NoteSettingsPageProps) {
+export function NoteSettingsPage({
+  repository,
+  listRepostRepository,
+}: NoteSettingsPageProps) {
   const [notes, setNotes] = useState<UserNoteV1[] | undefined>();
   const [query, setQuery] = useState('');
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
@@ -160,14 +166,16 @@ export function NoteSettingsPage({ repository }: NoteSettingsPageProps) {
         </div>
         <div className="settings-title-group">
           <p className="settings-eyebrow">Twitter Enhancement</p>
-          <h1>本地备注</h1>
-          <p className="settings-subtitle">检索、备份和迁移你为 X 用户保存的私人备注。</p>
+          <h1>扩展设置</h1>
+          <p className="settings-subtitle">配置列表浏览方式，并管理你为 X 用户保存的私人备注。</p>
         </div>
         <div className="privacy-badge">
           <span className="privacy-badge__dot" aria-hidden="true" />
           仅保存在此浏览器
         </div>
       </header>
+
+      <ListRepostSettings repository={listRepostRepository} />
 
       <section className="note-ledger" aria-labelledby="note-list-heading">
         <aside className="ledger-summary">

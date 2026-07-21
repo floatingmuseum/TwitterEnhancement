@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Local, private notes for X/Twitter profiles and hover cards.",
+  "description": "Local enhancements for X/Twitter profiles, hover cards, and list timelines.",
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",

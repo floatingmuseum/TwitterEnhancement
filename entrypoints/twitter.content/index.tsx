@@ -1,12 +1,19 @@
 import { findXNoteSurfaceTargets } from '../../src/platform/x/dom-adapter';
+import { createXListRepostManager } from '../../src/platform/x/list-repost-manager';
+import { mountXListRepostUi } from '../../src/platform/x/mount-list-repost-ui';
 import { mountXNoteUi } from '../../src/platform/x/mount-note-ui';
 import { createXSurfaceMountManager } from '../../src/platform/x/surface-mount-manager';
+import { listRepostPreferenceRepository } from '../../src/shared/storage/browser-list-repost-preference-repository';
 
 export default defineContentScript({
   matches: ['https://x.com/*', 'https://twitter.com/*'],
   runAt: 'document_idle',
   main(ctx) {
     const manager = createXSurfaceMountManager(mountXNoteUi);
+    const listRepostManager = createXListRepostManager(
+      (target) => mountXListRepostUi(target, listRepostPreferenceRepository),
+      listRepostPreferenceRepository,
+    );
     let animationFrame: number | null = null;
 
     const scan = () => {
@@ -15,6 +22,7 @@ export default defineContentScript({
         return;
       }
       manager.sync(findXNoteSurfaceTargets());
+      listRepostManager.sync();
     };
 
     const scheduleScan = () => {
@@ -37,6 +45,7 @@ export default defineContentScript({
         window.cancelAnimationFrame(animationFrame);
       }
       manager.destroyAll();
+      listRepostManager.destroy();
     };
 
     window.addEventListener('pagehide', cleanup, { once: true });
