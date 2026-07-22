@@ -2,7 +2,10 @@ import { findXNoteSurfaceTargets } from '../../src/platform/x/dom-adapter';
 import { createXListRepostManager } from '../../src/platform/x/list-repost-manager';
 import { mountXListRepostUi } from '../../src/platform/x/mount-list-repost-ui';
 import { mountXNoteUi } from '../../src/platform/x/mount-note-ui';
+import { mountXVideoDownloadUi } from '../../src/platform/x/mount-video-download-ui';
 import { createXSurfaceMountManager } from '../../src/platform/x/surface-mount-manager';
+import { readCapturedTwitterVideoUrls } from '../../src/platform/x/twitter-video-data-bridge';
+import { createXVideoDownloadManager } from '../../src/platform/x/video-download-manager';
 import { listRepostPreferenceRepository } from '../../src/shared/storage/browser-list-repost-preference-repository';
 
 export default defineContentScript({
@@ -14,6 +17,17 @@ export default defineContentScript({
       (target) => mountXListRepostUi(target, listRepostPreferenceRepository),
       listRepostPreferenceRepository,
     );
+    const videoDownloadManager = createXVideoDownloadManager(
+      mountXVideoDownloadUi,
+      (target) => [
+        ...readCapturedTwitterVideoUrls(
+          document,
+          target.tweetId,
+          target.identities,
+        ),
+        ...performance.getEntriesByType('resource').map((entry) => entry.name),
+      ],
+    );
     let animationFrame: number | null = null;
 
     const scan = () => {
@@ -23,6 +37,7 @@ export default defineContentScript({
       }
       manager.sync(findXNoteSurfaceTargets());
       listRepostManager.sync();
+      videoDownloadManager.sync();
     };
 
     const scheduleScan = () => {
@@ -46,6 +61,7 @@ export default defineContentScript({
       }
       manager.destroyAll();
       listRepostManager.destroy();
+      videoDownloadManager.destroy();
     };
 
     window.addEventListener('pagehide', cleanup, { once: true });

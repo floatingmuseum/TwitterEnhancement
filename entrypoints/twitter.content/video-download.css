@@ -1,0 +1,97 @@
+:host {
+  --te-video-download-color: rgb(83, 100, 113);
+  --te-video-download-hover: rgb(0, 186, 124);
+  --te-video-download-hover-background: rgba(0, 186, 124, 0.1);
+  display: flex;
+  position: relative;
+  min-width: 34px;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+:host([data-te-theme="dark"]) {
+  --te-video-download-color: rgb(113, 118, 123);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.te-video-download {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: var(--te-video-download-color);
+  background: transparent;
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.te-video-download:hover:not(:disabled),
+.te-video-download:focus-visible {
+  color: var(--te-video-download-hover);
+  background: var(--te-video-download-hover-background);
+}
+
+.te-video-download:focus-visible {
+  outline: 2px solid var(--te-video-download-hover);
+  outline-offset: 1px;
+}
+
+.te-video-download:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.te-video-download svg {
+  width: 21px;
+  height: 21px;
+  fill: currentColor;
+}
+
+.te-video-download__status {
+  position: absolute;
+  z-index: 2;
+  bottom: calc(100% + 5px);
+  left: 17px;
+  max-width: 240px;
+  transform: translateX(-50%);
+  padding: 4px 7px;
+  border-radius: 4px;
+  color: #ffffff;
+  background: rgba(15, 20, 25, 0.92);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 15px;
+  opacity: 1;
+  pointer-events: none;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.te-video-download__status:empty {
+  display: none;
+}
+
+:host([data-state="success"]) .te-video-download {
+  color: rgb(0, 186, 124);
+}
+
+:host([data-state="error"]) .te-video-download {
+  color: rgb(244, 33, 46);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .te-video-download {
+    transition: none;
+  }
+}

@@ -6,8 +6,8 @@ export default defineConfig({
   outDirTemplate: '.',
   manifest: {
     name: 'Twitter Enhancement',
-    description: '为 X / Twitter 提供本地私人备注和列表页纯转贴过滤。',
-    permissions: ['storage'],
+    description: '为 X / Twitter 提供本地私人备注、列表页纯转贴过滤和视频下载。',
+    permissions: ['storage', 'downloads'],
     action: {
       default_title: '管理本地备注',
     },
