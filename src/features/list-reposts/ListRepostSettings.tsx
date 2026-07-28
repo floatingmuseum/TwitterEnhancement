@@ -28,7 +28,7 @@ const DISPLAY_MODE_OPTIONS: readonly DisplayModeOption[] = [
   {
     mode: 'social-context',
     title: '保留转贴来源',
-    description: '始终保留“某用户已转贴”，正文保持收起。',
+    description: '始终保留收起提示与转贴来源，正文保持收起。',
   },
 ];
 
@@ -131,7 +131,7 @@ export function ListRepostSettings({ repository }: ListRepostSettingsProps) {
               <span className="preview-post-line" />
               <span className="preview-repost-trace">
                 <span className="preview-repost-icon">↻</span>
-                <span>某用户已转贴</span>
+                <span>一条来自某用户的转贴已被收起，点击可还原</span>
               </span>
               <span className="preview-post-line preview-post-line--short" />
             </span>

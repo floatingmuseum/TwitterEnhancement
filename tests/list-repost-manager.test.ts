@@ -218,7 +218,7 @@ describe('X list repost manager', () => {
     );
     const revealButton = placeholder?.shadowRoot?.querySelector('button');
     expect(revealButton).toHaveAccessibleName(
-      'alice 已转帖。点击临时显示完整转贴',
+      '一条来自 alice 的转贴已被收起，点击可还原',
     );
     expect(document.querySelector<HTMLElement>('#plain-repost')?.style.display).toBe(
       'none',
@@ -269,7 +269,7 @@ describe('X list repost manager', () => {
     );
     expect(
       placeholder?.shadowRoot?.querySelector('.te-repost-placeholder__label'),
-    ).toHaveTextContent('alice 已转帖');
+    ).toHaveTextContent('一条来自 alice 的转贴已被收起，点击可还原');
     expect(
       placeholder?.shadowRoot?.querySelector('button'),
     ).toHaveClass('te-repost-placeholder--context');
@@ -310,9 +310,9 @@ describe('X list repost manager', () => {
     );
     expect(
       placeholder?.shadowRoot?.querySelector('.te-repost-placeholder__label'),
-    ).toHaveTextContent('bob 已转帖');
+    ).toHaveTextContent('一条来自 bob 的转贴已被收起，点击可还原');
     expect(placeholder?.shadowRoot?.querySelector('button')).toHaveAccessibleName(
-      'bob 已转帖。点击临时显示完整转贴',
+      '一条来自 bob 的转贴已被收起，点击可还原',
     );
 
     manager.destroy();

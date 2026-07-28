@@ -233,8 +233,8 @@ class PlainRepostVisibilityController {
     button.className = `te-repost-placeholder te-repost-placeholder--${
       mode === 'divider' ? 'divider' : 'context'
     }`;
-    button.setAttribute('aria-label', `${label}。点击临时显示完整转贴`);
-    button.title = '点击临时显示完整转贴';
+    button.setAttribute('aria-label', label);
+    button.title = '点击可还原';
 
     const content = document.createElement('span');
     content.className = 'te-repost-placeholder__content';
@@ -273,7 +273,7 @@ class PlainRepostVisibilityController {
       '.te-repost-placeholder__label',
     );
     if (button) {
-      button.setAttribute('aria-label', `${label}。点击临时显示完整转贴`);
+      button.setAttribute('aria-label', label);
     }
     if (labelElement) {
       labelElement.textContent = label;
@@ -313,8 +313,13 @@ class PlainRepostVisibilityController {
 }
 
 function getPlainRepostLabel(article: HTMLElement): string {
-  return article.querySelector('[data-testid="socialContext"]')?.textContent?.trim() ||
-    '某用户已转贴';
+  const socialContext = article
+    .querySelector('[data-testid="socialContext"]')
+    ?.textContent?.trim();
+  const source = socialContext
+    ?.replace(/\s*已(?:转帖|转贴)\s*$/u, '')
+    .trim() || '某用户';
+  return `一条来自 ${source} 的转贴已被收起，点击可还原`;
 }
 
 function extractTweetId(article: HTMLElement): string | null {

@@ -76,6 +76,9 @@ describe('NoteSettingsPage', () => {
 
     const hiddenMode = await screen.findByRole('radio', { name: /完全隐藏/ });
     const dividerMode = screen.getByRole('radio', { name: /灰线提示/ });
+    expect(
+      screen.getAllByText('一条来自某用户的转贴已被收起，点击可还原'),
+    ).toHaveLength(3);
     expect(hiddenMode).toBeChecked();
 
     await user.click(dividerMode);
