@@ -8,19 +8,26 @@ import {
 } from '../../features/list-reposts/list-repost-preference';
 import { isDarkXPage } from './theme';
 
-export interface XListRepostTarget {
-  anchor: HTMLElement;
+export type XRepostTimelineSurface = 'home' | 'list' | 'profile';
+export type XRepostTimelineControlPlacement = 'append' | 'before';
+
+export interface XRepostTimelineTarget {
+  controlAnchor: HTMLElement | null;
+  controlPlacement: XRepostTimelineControlPlacement;
   timeline: HTMLElement;
+  routeKey: string;
+  surface: XRepostTimelineSurface;
 }
 
-export interface MountedXListRepostControl {
+export interface MountedXRepostTimelineControl {
   updateAppearance(): void;
+  isConnected?(): boolean;
   destroy(): void;
 }
 
-export type MountXListRepostControl = (
-  target: XListRepostTarget,
-) => MountedXListRepostControl;
+export type MountXRepostTimelineControl = (
+  target: XRepostTimelineTarget,
+) => MountedXRepostTimelineControl | null;
 
 interface InlineDisplayState {
   value: string;
@@ -37,6 +44,8 @@ const LIST_ROUTE_PATTERNS = [
   /^\/[a-z0-9_]+\/lists\/(\d+)\/?$/i,
   /^\/i\/user\/\d+\/list\/(\d+)\/?$/,
 ];
+
+const PROFILE_HANDLE_PATTERN = /^[a-z0-9_]{1,15}$/i;
 
 export function getXListId(url: URL): string | null {
   for (const pattern of LIST_ROUTE_PATTERNS) {
@@ -87,12 +96,76 @@ function lowestCommonAncestor(
   return null;
 }
 
-export function findXListRepostTarget(
+function findXListHeaderControlAnchor(
+  primaryColumn: HTMLElement,
+  listId: string,
+): HTMLElement | null {
+  const links = Array.from(primaryColumn.querySelectorAll<HTMLAnchorElement>('a[href]'));
+  const membersLink = links.find((link) =>
+    linkTargetsListSubroute(link, listId, 'members'),
+  );
+  const followersLink = links.find((link) =>
+    linkTargetsListSubroute(link, listId, 'followers'),
+  );
+  if (!membersLink || !followersLink) {
+    return null;
+  }
+
+  return lowestCommonAncestor(membersLink, followersLink)?.parentElement ?? null;
+}
+
+interface XRepostTimelineRoute {
+  key: string;
+  profileHandle?: string;
+  surface: XRepostTimelineSurface;
+}
+
+function getXRepostTimelineRoute(url: URL): XRepostTimelineRoute | null {
+  if (/^\/home\/?$/i.test(url.pathname)) {
+    return { key: 'home', surface: 'home' };
+  }
+
+  const listId = getXListId(url);
+  if (listId) {
+    return { key: `list:${listId}`, surface: 'list' };
+  }
+
+  const segments = url.pathname.split('/').filter(Boolean);
+  const profileHandle = segments.length === 1 ? segments[0] : undefined;
+  if (profileHandle && PROFILE_HANDLE_PATTERN.test(profileHandle)) {
+    return {
+      key: `profile:${profileHandle.toLowerCase()}`,
+      profileHandle,
+      surface: 'profile',
+    };
+  }
+
+  return null;
+}
+
+function profileIdentityMatches(
+  primaryColumn: HTMLElement,
+  expectedHandle: string,
+): boolean {
+  const userName = primaryColumn.querySelector<HTMLElement>(
+    '[data-testid="UserName"]',
+  );
+  if (!userName || userName.closest('[data-testid="HoverCard"]')) {
+    return false;
+  }
+
+  const normalizedHandle = `@${expectedHandle.toLowerCase()}`;
+  return Array.from(userName.querySelectorAll<HTMLElement>('a, div, span')).some(
+    (element) => element.textContent?.trim().toLowerCase() === normalizedHandle,
+  );
+}
+
+export function findXRepostTimelineTarget(
   root: ParentNode = document,
   url: URL = new URL(window.location.href),
-): XListRepostTarget | null {
-  const listId = getXListId(url);
-  if (!listId) {
+): XRepostTimelineTarget | null {
+  const route = getXRepostTimelineRoute(url);
+  if (!route) {
     return null;
   }
 
@@ -101,40 +174,50 @@ export function findXListRepostTarget(
     return null;
   }
 
-  const links = Array.from(primaryColumn.querySelectorAll<HTMLAnchorElement>('a[href]'));
-  const membersLink = links.find((link) =>
-    linkTargetsListSubroute(link, listId, 'members'),
-  );
-  const followersLink = links.find((link) =>
-    linkTargetsListSubroute(link, listId, 'followers'),
-  );
-
-  if (!membersLink || !followersLink) {
+  if (
+    route.surface === 'profile' &&
+    (!route.profileHandle || !profileIdentityMatches(primaryColumn, route.profileHandle))
+  ) {
     return null;
   }
 
-  const statsRow = lowestCommonAncestor(membersLink, followersLink);
-  const anchor = statsRow?.parentElement;
-  const headerCell = anchor?.closest<HTMLElement>('[data-testid="cellInnerDiv"]');
-  const timeline = headerCell?.parentElement;
-
-  if (!anchor || !headerCell || !timeline || headerCell.querySelector('article')) {
-    return null;
-  }
-
-  return { anchor, timeline };
-}
-
-export function findXListTimeline(root: ParentNode = document): HTMLElement | null {
-  const primaryColumn = root.querySelector<HTMLElement>('[data-testid="primaryColumn"]');
-  const article = primaryColumn?.querySelector<HTMLElement>('article');
+  const article = primaryColumn.querySelector<HTMLElement>('article');
   const articleCell = article?.closest<HTMLElement>('[data-testid="cellInnerDiv"]');
-  return articleCell?.parentElement ?? null;
+  const timeline = articleCell?.parentElement;
+
+  if (!articleCell || !timeline) {
+    return null;
+  }
+
+  const listId = route.surface === 'list' ? getXListId(url) : null;
+  const timelineRegion = timeline.closest<HTMLElement>('[role="region"]');
+  const controlAnchor = listId
+    ? findXListHeaderControlAnchor(primaryColumn, listId)
+    : timelineRegion;
+  const controlPlacement: XRepostTimelineControlPlacement = listId
+    ? 'append'
+    : 'before';
+
+  return {
+    controlAnchor,
+    controlPlacement,
+    timeline,
+    routeKey: route.key,
+    surface: route.surface,
+  };
 }
 
 export function isPlainRepostArticle(article: HTMLElement): boolean {
-  return article.matches('article') &&
-    article.querySelector('[data-testid="socialContext"]') !== null;
+  if (!article.matches('article')) {
+    return false;
+  }
+
+  const socialContext = article
+    .querySelector('[data-testid="socialContext"]')
+    ?.textContent?.trim();
+  return socialContext
+    ? /(?:\bReposted\b|(?:已)?转(?:帖|贴)(?:了)?)/iu.test(socialContext)
+    : false;
 }
 
 class PlainRepostVisibilityController {
@@ -317,7 +400,7 @@ function getPlainRepostLabel(article: HTMLElement): string {
     .querySelector('[data-testid="socialContext"]')
     ?.textContent?.trim();
   const source = socialContext
-    ?.replace(/\s*已(?:转帖|转贴)\s*$/u, '')
+    ?.replace(/\s*(?:Reposted|(?:已)?转(?:帖|贴)(?:了)?)\s*$/iu, '')
     .trim() || '某用户';
   return `一条来自 ${source} 的转贴已被收起，点击可还原`;
 }
@@ -338,20 +421,19 @@ function extractTweetId(article: HTMLElement): string | null {
   return null;
 }
 
-export interface XListRepostManager {
+export interface XRepostTimelineManager {
   sync(root?: ParentNode, url?: URL): void;
   destroy(): void;
 }
 
-export function createXListRepostManager(
-  mount: MountXListRepostControl,
+export function createXRepostTimelineManager(
+  mount: MountXRepostTimelineControl,
   repository: ListRepostPreferenceRepository,
-): XListRepostManager {
+): XRepostTimelineManager {
   const visibility = new PlainRepostVisibilityController();
-  let currentTarget: XListRepostTarget | null = null;
   let currentTimeline: HTMLElement | null = null;
-  let currentListId: string | null = null;
-  let mounted: MountedXListRepostControl | null = null;
+  let currentRouteKey: string | null = null;
+  let mounted: MountedXRepostTimelineControl | null = null;
   let preferences: ListRepostPreferences = {
     ...DEFAULT_LIST_REPOST_PREFERENCES,
   };
@@ -385,45 +467,53 @@ export function createXListRepostManager(
     root: ParentNode = document,
     url: URL = new URL(window.location.href),
   ) {
-    const listId = getXListId(url);
-    if (!listId) {
+    const route = getXRepostTimelineRoute(url);
+    if (!route) {
       mounted?.destroy();
       mounted = null;
-      currentTarget = null;
       currentTimeline = null;
-      currentListId = null;
+      currentRouteKey = null;
       visibility.resetSession();
       return;
     }
 
-    if (currentListId !== null && currentListId !== listId) {
+    if (currentRouteKey !== null && currentRouteKey !== route.key) {
       mounted?.destroy();
       mounted = null;
-      currentTarget = null;
       currentTimeline = null;
       visibility.resetSession();
     }
-    currentListId = listId;
+    currentRouteKey = route.key;
 
-    const target = findXListRepostTarget(root, url);
+    const target = findXRepostTimelineTarget(root, url);
     if (target) {
-      if (currentTarget?.anchor !== target.anchor || !mounted) {
+      const timelineChanged =
+        currentTimeline !== null && currentTimeline !== target.timeline;
+      if (timelineChanged) {
         mounted?.destroy();
+        mounted = null;
+        visibility.resetSession();
+      }
+
+      if (mounted?.isConnected?.() === false) {
+        mounted?.destroy();
+        mounted = null;
+      }
+
+      if (!mounted && target.controlAnchor) {
         mounted = mount(target);
-      } else {
+      } else if (mounted) {
         mounted.updateAppearance();
       }
 
-      currentTarget = target;
       currentTimeline = target.timeline;
       visibility.sync(target.timeline, preferences);
       return;
     }
 
-    if (currentTarget && !currentTarget.anchor.isConnected) {
+    if (mounted?.isConnected?.() === false) {
       mounted?.destroy();
       mounted = null;
-      currentTarget = null;
     }
 
     if (currentTimeline && !currentTimeline.isConnected) {
@@ -431,7 +521,6 @@ export function createXListRepostManager(
       visibility.restoreAll();
     }
 
-    currentTimeline ??= findXListTimeline(root);
     if (currentTimeline) {
       visibility.sync(currentTimeline, preferences);
     }
@@ -442,9 +531,8 @@ export function createXListRepostManager(
     unsubscribe();
     mounted?.destroy();
     mounted = null;
-    currentTarget = null;
     currentTimeline = null;
-    currentListId = null;
+    currentRouteKey = null;
     visibility.resetSession();
   }
 

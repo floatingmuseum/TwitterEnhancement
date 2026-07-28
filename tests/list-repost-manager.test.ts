@@ -4,9 +4,10 @@ import type {
   ListRepostPreferenceRepository,
 } from '../src/features/list-reposts/list-repost-preference';
 import {
-  createXListRepostManager,
-  findXListRepostTarget,
+  createXRepostTimelineManager,
+  findXRepostTimelineTarget,
   getXListId,
+  isPlainRepostArticle,
 } from '../src/platform/x/list-repost-manager';
 
 class FakeListRepostPreferenceRepository
@@ -67,7 +68,7 @@ function renderListPage() {
                 </div>
               </div>
             </div>
-            <div data-testid="cellInnerDiv">
+            <div data-testid="cellInnerDiv" class="post-cell">
               <article id="plain-repost" style="display: grid">
                 <div data-testid="socialContext">alice 已转帖</div>
                 <a href="/source/status/123"><time>1小时</time></a>
@@ -90,7 +91,61 @@ function renderListPage() {
   `;
 }
 
-describe('X list repost manager', () => {
+function renderHomePage() {
+  document.body.innerHTML = `
+    <main role="main">
+      <div data-testid="primaryColumn">
+        <nav role="tablist"><button role="tab">为你推荐</button></nav>
+        <section role="region">
+          <div class="timeline">
+            <div data-testid="cellInnerDiv" class="composer">有什么新鲜事？</div>
+            <div data-testid="cellInnerDiv" class="post-cell">
+              <article id="home-repost">
+                <div data-testid="socialContext">alice 已转帖</div>
+                <a href="/source/status/321"><time>1小时</time></a>
+              </article>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  `;
+}
+
+function renderProfilePage() {
+  document.body.innerHTML = `
+    <main role="main">
+      <div data-testid="primaryColumn">
+        <div data-testid="cellInnerDiv" class="profile-header">
+          <div data-testid="UserName"><span>Alice</span><span>@alice</span></div>
+        </div>
+        <div class="profile-tabs">
+          <nav role="navigation" aria-label="个人资料时间线">
+            <div role="tablist"><button role="tab">帖子</button></div>
+          </nav>
+        </div>
+        <section role="region">
+          <div class="timeline">
+            <div data-testid="cellInnerDiv" class="post-cell">
+              <article id="profile-repost">
+                <div data-testid="socialContext">bob Reposted</div>
+                <a href="/source/status/456"><time>2小时</time></a>
+              </article>
+            </div>
+            <div data-testid="cellInnerDiv">
+              <article id="pinned-post">
+                <div data-testid="socialContext">Pinned</div>
+                <div data-testid="tweetText">置顶原创内容</div>
+              </article>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  `;
+}
+
+describe('X repost timeline manager', () => {
   const listUrl = new URL('https://x.com/i/lists/1440581055191269380');
 
   beforeEach(() => {
@@ -105,20 +160,75 @@ describe('X list repost manager', () => {
     expect(getXListId(new URL('https://x.com/home?list=42'))).toBeNull();
   });
 
-  it('finds the list profile control slot from canonical members and followers links', () => {
+  it('places the list control immediately before the first post', () => {
     renderListPage();
 
-    const target = findXListRepostTarget(document, listUrl);
+    const target = findXRepostTimelineTarget(document, listUrl);
 
-    expect(target?.anchor).toHaveClass('list-profile');
+    expect(target?.controlAnchor).toHaveClass('list-profile');
+    expect(target?.controlPlacement).toBe('append');
     expect(target?.timeline).toHaveClass('timeline');
+    expect(target?.surface).toBe('list');
+  });
+
+  it('recognizes home feeds and only the main posts tab on profile pages', () => {
+    renderHomePage();
+    expect(
+      findXRepostTimelineTarget(document, new URL('https://x.com/home'))?.surface,
+    ).toBe('home');
+
+    renderProfilePage();
+    expect(
+      findXRepostTimelineTarget(document, new URL('https://x.com/alice'))?.surface,
+    ).toBe('profile');
+    expect(
+      findXRepostTimelineTarget(document, new URL('https://x.com/alice'))
+        ?.controlAnchor,
+    ).toHaveAttribute('role', 'region');
+    expect(
+      findXRepostTimelineTarget(document, new URL('https://x.com/alice'))
+        ?.controlPlacement,
+    ).toBe('before');
+    expect(
+      findXRepostTimelineTarget(
+        document,
+        new URL('https://x.com/alice/with_replies'),
+      ),
+    ).toBeNull();
+    expect(
+      findXRepostTimelineTarget(document, new URL('https://x.com/bob')),
+    ).toBeNull();
+  });
+
+  it('filters home and profile reposts without hiding pinned profile posts', () => {
+    const repository = new FakeListRepostPreferenceRepository(false);
+    const manager = createXRepostTimelineManager(
+      () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
+      repository,
+    );
+
+    renderHomePage();
+    manager.sync(document, new URL('https://x.com/home'));
+    expect(document.querySelector<HTMLElement>('#home-repost')?.style.display).toBe(
+      'none',
+    );
+
+    renderProfilePage();
+    manager.sync(document, new URL('https://x.com/alice'));
+    const profileRepost = document.querySelector<HTMLElement>('#profile-repost');
+    const pinnedPost = document.querySelector<HTMLElement>('#pinned-post');
+    expect(profileRepost?.style.display).toBe('none');
+    expect(pinnedPost?.style.display).toBe('');
+    expect(isPlainRepostArticle(pinnedPost as HTMLElement)).toBe(false);
+
+    manager.destroy();
   });
 
   it('hides only plain reposts and restores their prior display style', async () => {
     renderListPage();
     const repository = new FakeListRepostPreferenceRepository(false);
     const destroy = vi.fn();
-    const manager = createXListRepostManager(
+    const manager = createXRepostTimelineManager(
       () => ({ updateAppearance: vi.fn(), destroy }),
       repository,
     );
@@ -148,7 +258,7 @@ describe('X list repost manager', () => {
     renderListPage();
     const repository = new FakeListRepostPreferenceRepository(false);
     const destroy = vi.fn();
-    const manager = createXListRepostManager(
+    const manager = createXRepostTimelineManager(
       () => ({ updateAppearance: vi.fn(), destroy }),
       repository,
     );
@@ -164,7 +274,7 @@ describe('X list repost manager', () => {
     const lazyRepost = document.querySelector<HTMLElement>('#lazy-repost');
     expect(lazyRepost?.style.display).toBe('none');
 
-    manager.sync(document, new URL('https://x.com/home'));
+    manager.sync(document, new URL('https://x.com/explore'));
 
     expect(document.querySelector<HTMLElement>('#plain-repost')?.style.display).toBe('grid');
     expect(lazyRepost?.style.display).toBe('');
@@ -174,7 +284,7 @@ describe('X list repost manager', () => {
   it('keeps filtering when X virtualizes the list header out of the DOM', () => {
     renderListPage();
     const repository = new FakeListRepostPreferenceRepository(false);
-    const manager = createXListRepostManager(
+    const manager = createXRepostTimelineManager(
       () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
       repository,
     );
@@ -188,12 +298,12 @@ describe('X list repost manager', () => {
     );
   });
 
-  it('filters a scroll-restored list even when the header was never mounted', () => {
+  it('filters without mounting when a scroll-restored list has no profile header', () => {
     renderListPage();
     document.querySelector('.list-header-cell')?.remove();
     const repository = new FakeListRepostPreferenceRepository(false);
     const mount = vi.fn(() => ({ updateAppearance: vi.fn(), destroy: vi.fn() }));
-    const manager = createXListRepostManager(mount, repository);
+    const manager = createXRepostTimelineManager(mount, repository);
 
     manager.sync(document, listUrl);
 
@@ -206,7 +316,7 @@ describe('X list repost manager', () => {
   it('renders a hover divider that temporarily expands one repost until refresh', async () => {
     renderListPage();
     const repository = new FakeListRepostPreferenceRepository(false, 'divider');
-    const manager = createXListRepostManager(
+    const manager = createXRepostTimelineManager(
       () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
       repository,
     );
@@ -233,7 +343,7 @@ describe('X list repost manager', () => {
     expect(placeholder?.isConnected).toBe(false);
 
     manager.destroy();
-    const refreshedManager = createXListRepostManager(
+    const refreshedManager = createXRepostTimelineManager(
       () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
       repository,
     );
@@ -257,7 +367,7 @@ describe('X list repost manager', () => {
       false,
       'social-context',
     );
-    const manager = createXListRepostManager(
+    const manager = createXRepostTimelineManager(
       () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
       repository,
     );
@@ -286,7 +396,7 @@ describe('X list repost manager', () => {
       false,
       'social-context',
     );
-    const manager = createXListRepostManager(
+    const manager = createXRepostTimelineManager(
       () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
       repository,
     );

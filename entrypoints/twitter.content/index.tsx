@@ -1,6 +1,6 @@
 import { findXNoteSurfaceTargets } from '../../src/platform/x/dom-adapter';
-import { createXListRepostManager } from '../../src/platform/x/list-repost-manager';
-import { mountXListRepostUi } from '../../src/platform/x/mount-list-repost-ui';
+import { createXRepostTimelineManager } from '../../src/platform/x/list-repost-manager';
+import { mountXRepostTimelineUi } from '../../src/platform/x/mount-list-repost-ui';
 import { mountXNoteUi } from '../../src/platform/x/mount-note-ui';
 import { mountXVideoDownloadUi } from '../../src/platform/x/mount-video-download-ui';
 import { createXSurfaceMountManager } from '../../src/platform/x/surface-mount-manager';
@@ -13,8 +13,8 @@ export default defineContentScript({
   runAt: 'document_idle',
   main(ctx) {
     const manager = createXSurfaceMountManager(mountXNoteUi);
-    const listRepostManager = createXListRepostManager(
-      (target) => mountXListRepostUi(target, listRepostPreferenceRepository),
+    const repostTimelineManager = createXRepostTimelineManager(
+      (target) => mountXRepostTimelineUi(target, listRepostPreferenceRepository),
       listRepostPreferenceRepository,
     );
     const videoDownloadManager = createXVideoDownloadManager(
@@ -36,7 +36,7 @@ export default defineContentScript({
         return;
       }
       manager.sync(findXNoteSurfaceTargets());
-      listRepostManager.sync();
+      repostTimelineManager.sync();
       videoDownloadManager.sync();
     };
 
@@ -60,7 +60,7 @@ export default defineContentScript({
         window.cancelAnimationFrame(animationFrame);
       }
       manager.destroyAll();
-      listRepostManager.destroy();
+      repostTimelineManager.destroy();
       videoDownloadManager.destroy();
     };
 

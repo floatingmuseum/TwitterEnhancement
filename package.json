@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Local enhancements for X/Twitter profiles, hover cards, and list timelines.",
+  "description": "Local enhancements for X/Twitter profiles, timelines, and video downloads.",
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",

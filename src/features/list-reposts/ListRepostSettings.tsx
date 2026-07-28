@@ -95,12 +95,12 @@ export function ListRepostSettings({ repository }: ListRepostSettingsProps) {
   return (
     <section className="repost-settings" aria-labelledby="repost-settings-heading">
       <div className="repost-settings__intro">
-        <p className="section-kicker">列表时间线</p>
+        <p className="section-kicker">时间线过滤</p>
         <h2 id="repost-settings-heading">隐藏转贴的呈现方式</h2>
         <p>
-          列表页的“显示转贴”关闭时生效。点击保留的灰线或转贴来源，可临时展开完整内容。
+          受支持时间线中的“显示转贴”关闭时生效。点击保留的灰线或转贴来源，可临时展开完整内容。
         </p>
-        <span className="session-note">刷新列表页后，临时展开状态会清除。</span>
+        <span className="session-note">刷新或切换时间线后，临时展开状态会清除。</span>
       </div>
 
       <fieldset className="display-mode-grid" disabled={isLoading || isSaving}>
