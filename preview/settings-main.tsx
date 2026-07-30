@@ -1,6 +1,13 @@
 import ReactDOM from 'react-dom/client';
 import '../entrypoints/options/style.css';
 import type {
+  InterfaceModuleKey,
+  InterfaceModuleVisibility,
+  InterfaceModuleVisibilityListener,
+  InterfaceModuleVisibilityRepository,
+} from '../src/features/interface-modules/interface-module-visibility';
+import { DEFAULT_INTERFACE_MODULE_VISIBILITY } from '../src/features/interface-modules/interface-module-visibility';
+import type {
   HiddenRepostDisplayMode,
   ListRepostPreferenceListener,
   ListRepostPreferenceRepository,
@@ -14,6 +21,34 @@ import type {
   UserNoteV1,
 } from '../src/features/user-notes/note-model';
 import { NoteSettingsPage } from '../src/features/user-notes/NoteSettingsPage';
+
+class PreviewInterfaceModuleRepository
+  implements InterfaceModuleVisibilityRepository
+{
+  private visibility: InterfaceModuleVisibility = {
+    ...DEFAULT_INTERFACE_MODULE_VISIBILITY,
+  };
+  private readonly listeners = new Set<InterfaceModuleVisibilityListener>();
+
+  async getVisibility() {
+    return { ...this.visibility };
+  }
+
+  async setModuleVisibility(
+    module: InterfaceModuleKey,
+    visible: boolean,
+  ): Promise<void> {
+    this.visibility = { ...this.visibility, [module]: visible };
+    for (const listener of this.listeners) {
+      listener({ [module]: visible });
+    }
+  }
+
+  subscribe(listener: InterfaceModuleVisibilityListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+}
 
 class PreviewListRepostRepository implements ListRepostPreferenceRepository {
   private mode: HiddenRepostDisplayMode = 'hidden';
@@ -94,6 +129,7 @@ class PreviewNoteRepository implements UserNoteCollectionRepository {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <NoteSettingsPage
     repository={new PreviewNoteRepository()}
+    interfaceModuleRepository={new PreviewInterfaceModuleRepository()}
     listRepostRepository={new PreviewListRepostRepository()}
   />,
 );

@@ -1,4 +1,5 @@
 import { findXNoteSurfaceTargets } from '../../src/platform/x/dom-adapter';
+import { createXInterfaceModuleManager } from '../../src/platform/x/interface-module-manager';
 import { createXRepostTimelineManager } from '../../src/platform/x/list-repost-manager';
 import { createXMediaNavigationManager } from '../../src/platform/x/media-navigation-manager';
 import { mountXRepostTimelineUi } from '../../src/platform/x/mount-list-repost-ui';
@@ -8,6 +9,7 @@ import { mountXVideoDownloadUi } from '../../src/platform/x/mount-video-download
 import { createXSurfaceMountManager } from '../../src/platform/x/surface-mount-manager';
 import { readCapturedTwitterVideoUrls } from '../../src/platform/x/twitter-video-data-bridge';
 import { createXVideoDownloadManager } from '../../src/platform/x/video-download-manager';
+import { interfaceModuleVisibilityRepository } from '../../src/shared/storage/browser-interface-module-visibility-repository';
 import { listRepostPreferenceRepository } from '../../src/shared/storage/browser-list-repost-preference-repository';
 
 export default defineContentScript({
@@ -15,6 +17,9 @@ export default defineContentScript({
   runAt: 'document_idle',
   main(ctx) {
     const manager = createXSurfaceMountManager(mountXNoteUi);
+    const interfaceModuleManager = createXInterfaceModuleManager(
+      interfaceModuleVisibilityRepository,
+    );
     const repostTimelineManager = createXRepostTimelineManager(
       (target) => mountXRepostTimelineUi(target, listRepostPreferenceRepository),
       listRepostPreferenceRepository,
@@ -41,6 +46,7 @@ export default defineContentScript({
         return;
       }
       manager.sync(findXNoteSurfaceTargets());
+      interfaceModuleManager.sync();
       repostTimelineManager.sync();
       mediaNavigationManager.sync();
       videoDownloadManager.sync();
@@ -66,6 +72,7 @@ export default defineContentScript({
         window.cancelAnimationFrame(animationFrame);
       }
       manager.destroyAll();
+      interfaceModuleManager.destroy();
       repostTimelineManager.destroy();
       mediaNavigationManager.destroy();
       videoDownloadManager.destroy();

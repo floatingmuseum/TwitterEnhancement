@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { InterfaceModuleSettings } from '../interface-modules/InterfaceModuleSettings';
+import type { InterfaceModuleVisibilityRepository } from '../interface-modules/interface-module-visibility';
 import { ListRepostSettings } from '../list-reposts/ListRepostSettings';
 import type { ListRepostPreferenceRepository } from '../list-reposts/list-repost-preference';
 import type {
@@ -20,11 +22,13 @@ interface Notice {
 
 interface NoteSettingsPageProps {
   repository: UserNoteCollectionRepository;
+  interfaceModuleRepository: InterfaceModuleVisibilityRepository;
   listRepostRepository: ListRepostPreferenceRepository;
 }
 
 export function NoteSettingsPage({
   repository,
+  interfaceModuleRepository,
   listRepostRepository,
 }: NoteSettingsPageProps) {
   const [notes, setNotes] = useState<UserNoteV1[] | undefined>();
@@ -167,13 +171,15 @@ export function NoteSettingsPage({
         <div className="settings-title-group">
           <p className="settings-eyebrow">Twitter Enhancement</p>
           <h1>扩展设置</h1>
-          <p className="settings-subtitle">配置列表浏览方式，并管理你为 X 用户保存的私人备注。</p>
+          <p className="settings-subtitle">配置 X 页面显示与列表浏览方式，并管理本地私人备注。</p>
         </div>
         <div className="privacy-badge">
           <span className="privacy-badge__dot" aria-hidden="true" />
           仅保存在此浏览器
         </div>
       </header>
+
+      <InterfaceModuleSettings repository={interfaceModuleRepository} />
 
       <ListRepostSettings repository={listRepostRepository} />
 

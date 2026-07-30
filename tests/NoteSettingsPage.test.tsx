@@ -2,6 +2,10 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NoteSettingsPage } from '../src/features/user-notes/NoteSettingsPage';
 import {
+  INTERFACE_MODULE_VISIBILITY_STORAGE_KEYS,
+  LocalInterfaceModuleVisibilityRepository,
+} from '../src/shared/storage/interface-module-visibility-repository';
+import {
   HIDDEN_REPOST_DISPLAY_MODE_STORAGE_KEY,
   LocalListRepostPreferenceRepository,
 } from '../src/shared/storage/list-repost-preference-repository';
@@ -13,6 +17,8 @@ describe('NoteSettingsPage', () => {
     const user = userEvent.setup();
     const storage = new FakeExtensionLocalStorage();
     const repository = new LocalUserNoteRepository(storage);
+    const interfaceModuleRepository =
+      new LocalInterfaceModuleVisibilityRepository(storage);
     const listRepostRepository = new LocalListRepostPreferenceRepository(storage);
     await repository.importNotes(
       [
@@ -37,6 +43,7 @@ describe('NoteSettingsPage', () => {
     render(
       <NoteSettingsPage
         repository={repository}
+        interfaceModuleRepository={interfaceModuleRepository}
         listRepostRepository={listRepostRepository}
       />,
     );
@@ -65,11 +72,14 @@ describe('NoteSettingsPage', () => {
     const user = userEvent.setup();
     const storage = new FakeExtensionLocalStorage();
     const repository = new LocalUserNoteRepository(storage);
+    const interfaceModuleRepository =
+      new LocalInterfaceModuleVisibilityRepository(storage);
     const listRepostRepository = new LocalListRepostPreferenceRepository(storage);
 
     render(
       <NoteSettingsPage
         repository={repository}
+        interfaceModuleRepository={interfaceModuleRepository}
         listRepostRepository={listRepostRepository}
       />,
     );
@@ -87,5 +97,35 @@ describe('NoteSettingsPage', () => {
     expect(storage.values.get(HIDDEN_REPOST_DISPLAY_MODE_STORAGE_KEY)).toBe(
       'divider',
     );
+  });
+
+  it('persists each X interface module switch independently', async () => {
+    const user = userEvent.setup();
+    const storage = new FakeExtensionLocalStorage();
+    const repository = new LocalUserNoteRepository(storage);
+    const interfaceModuleRepository =
+      new LocalInterfaceModuleVisibilityRepository(storage);
+    const listRepostRepository = new LocalListRepostPreferenceRepository(storage);
+
+    render(
+      <NoteSettingsPage
+        repository={repository}
+        interfaceModuleRepository={interfaceModuleRepository}
+        listRepostRepository={listRepostRepository}
+      />,
+    );
+
+    const trendsSwitch = await screen.findByRole('switch', { name: '新鲜事' });
+    const searchSwitch = screen.getByRole('switch', { name: '右栏搜索框' });
+    expect(trendsSwitch).toBeChecked();
+    expect(searchSwitch).toBeChecked();
+
+    await user.click(trendsSwitch);
+
+    expect(trendsSwitch).not.toBeChecked();
+    expect(searchSwitch).toBeChecked();
+    expect(
+      storage.values.get(INTERFACE_MODULE_VISIBILITY_STORAGE_KEYS.trends),
+    ).toBe(false);
   });
 });
