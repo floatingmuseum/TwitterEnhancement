@@ -1,4 +1,5 @@
 import { findXNoteSurfaceTargets } from '../../src/platform/x/dom-adapter';
+import { createXInterfaceLayoutManager } from '../../src/platform/x/interface-layout-manager';
 import { createXInterfaceModuleManager } from '../../src/platform/x/interface-module-manager';
 import { createXRepostTimelineManager } from '../../src/platform/x/list-repost-manager';
 import { createXMediaNavigationManager } from '../../src/platform/x/media-navigation-manager';
@@ -9,6 +10,7 @@ import { mountXVideoDownloadUi } from '../../src/platform/x/mount-video-download
 import { createXSurfaceMountManager } from '../../src/platform/x/surface-mount-manager';
 import { readCapturedTwitterVideoUrls } from '../../src/platform/x/twitter-video-data-bridge';
 import { createXVideoDownloadManager } from '../../src/platform/x/video-download-manager';
+import { interfaceLayoutPreferenceRepository } from '../../src/shared/storage/browser-interface-layout-preference-repository';
 import { interfaceModuleVisibilityRepository } from '../../src/shared/storage/browser-interface-module-visibility-repository';
 import { listRepostPreferenceRepository } from '../../src/shared/storage/browser-list-repost-preference-repository';
 
@@ -19,6 +21,9 @@ export default defineContentScript({
     const manager = createXSurfaceMountManager(mountXNoteUi);
     const interfaceModuleManager = createXInterfaceModuleManager(
       interfaceModuleVisibilityRepository,
+    );
+    const interfaceLayoutManager = createXInterfaceLayoutManager(
+      interfaceLayoutPreferenceRepository,
     );
     const repostTimelineManager = createXRepostTimelineManager(
       (target) => mountXRepostTimelineUi(target, listRepostPreferenceRepository),
@@ -47,6 +52,7 @@ export default defineContentScript({
       }
       manager.sync(findXNoteSurfaceTargets());
       interfaceModuleManager.sync();
+      interfaceLayoutManager.sync();
       repostTimelineManager.sync();
       mediaNavigationManager.sync();
       videoDownloadManager.sync();
@@ -65,6 +71,7 @@ export default defineContentScript({
     });
 
     ctx.addEventListener(window, 'wxt:locationchange', scheduleScan);
+    ctx.addEventListener(window, 'resize', scheduleScan);
 
     const cleanup = () => {
       observer.disconnect();
@@ -73,6 +80,7 @@ export default defineContentScript({
       }
       manager.destroyAll();
       interfaceModuleManager.destroy();
+      interfaceLayoutManager.destroy();
       repostTimelineManager.destroy();
       mediaNavigationManager.destroy();
       videoDownloadManager.destroy();
