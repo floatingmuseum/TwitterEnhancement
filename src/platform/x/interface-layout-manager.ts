@@ -61,6 +61,38 @@ const SIDEBAR_HIDDEN_STYLES = {
   width: '0px',
 } as const;
 
+function findTweetMediaTargets(primary: HTMLElement): HTMLElement[] {
+  const targets = new Set<HTMLElement>();
+  for (const media of primary.querySelectorAll<HTMLElement>(
+    'article [data-testid="tweetPhoto"], article [data-testid="videoPlayer"], article [data-testid="videoComponent"], article [data-testid="card.wrapper"], article [data-testid="article-cover-image"], article video',
+  )) {
+    // X articles contain tweetPhoto nodes in both their cover and rich text.
+    // Only the timeline preview is an attachment; the reader uses the full column.
+    if (media.closest('[role="dialog"], [data-testid="twitterArticleReadView"]')) {
+      continue;
+    }
+    const article = media.closest('article');
+    let target = media;
+    // Constrain the whole attachment, including grids and aspect-ratio spacers.
+    // Stop before the tweet body (or a quoted tweet's body), so text can expand.
+    while (target.parentElement && target.parentElement !== article) {
+      const parent = target.parentElement;
+      if (
+        Array.from(
+          parent.querySelectorAll(
+            '[data-testid="tweetText"], [data-testid="User-Name"], [role="group"], article',
+          ),
+        ).some((boundary) => !target.contains(boundary))
+      ) {
+        break;
+      }
+      target = parent;
+    }
+    targets.add(target);
+  }
+  return [...targets];
+}
+
 function findTimelineContentTargets(primary: HTMLElement): HTMLElement[] {
   const targets = new Set<HTMLElement>();
   for (const cell of primary.querySelectorAll<HTMLElement>(
@@ -189,6 +221,8 @@ export function createXInterfaceLayoutManager(
   let leftHost: HTMLElement | null = null;
   let rightHost: HTMLElement | null = null;
   let normalDesktopLayout: NormalDesktopLayoutMeasurement | null = null;
+  let normalPrimaryWidth: number | null = null;
+  let mediaWidths = new WeakMap<HTMLElement, number>();
   let destroyed = false;
   let preferenceRevision = 0;
 
@@ -575,6 +609,8 @@ export function createXInterfaceLayoutManager(
       view.getComputedStyle(sidebar).display === 'none'
     ) {
       restoreAll(rightStyledElements);
+      normalPrimaryWidth = null;
+      mediaWidths = new WeakMap();
       rightHost = removeHost(rightHost);
       return;
     }
@@ -584,6 +620,56 @@ export function createXInterfaceLayoutManager(
     const shouldExpandTimeline =
       !preference.leftNavigationExpanded || !preference.rightSidebarVisible;
     if (shouldExpandTimeline) {
+      if (normalPrimaryWidth === null) {
+        // A hidden column may have had no measurable native width last time.
+        restoreElement(rightStyledElements, primary);
+      }
+      if (!rightStyledElements.has(primary)) {
+        const width = primary.getBoundingClientRect().width;
+        normalPrimaryWidth = width > 0 && Number.isFinite(width) ? width : null;
+        mediaWidths = new WeakMap();
+      }
+      const mediaTargets = findTweetMediaTargets(primary);
+      const unmeasuredTargets = mediaTargets.filter(
+        (target) => !mediaWidths.has(target),
+      );
+      if (normalPrimaryWidth !== null && unmeasuredTargets.length > 0) {
+        // Lazy-loaded tweets arrive after the column has expanded. Measure all
+        // new attachments in one native-width layout, then restore before paint.
+        for (const content of findTimelineContentTargets(primary)) {
+          restoreElement(rightStyledElements, content);
+        }
+        const originalStyle = primary.getAttribute('style');
+        try {
+          const width = `${normalPrimaryWidth}px`;
+          primary.style.setProperty('flex', `0 0 ${width}`, 'important');
+          primary.style.setProperty('width', width, 'important');
+          primary.style.setProperty('min-width', '0px', 'important');
+          primary.style.setProperty('max-width', width, 'important');
+          for (const target of unmeasuredTargets) {
+            const mediaWidth = target.getBoundingClientRect().width;
+            if (mediaWidth > 0 && Number.isFinite(mediaWidth)) {
+              mediaWidths.set(target, mediaWidth);
+            }
+          }
+        } finally {
+          if (originalStyle === null) {
+            primary.removeAttribute('style');
+          } else {
+            primary.setAttribute('style', originalStyle);
+          }
+        }
+      }
+      for (const target of mediaTargets) {
+        const width = mediaWidths.get(target);
+        if (width !== undefined) {
+          current.add(target);
+          applyStyles(rightStyledElements, target, 'tweet-media', {
+            'box-sizing': 'border-box',
+            'max-width': `min(100%, ${width}px)`,
+          });
+        }
+      }
       current.add(primary);
       applyStyles(
         rightStyledElements,
@@ -618,6 +704,9 @@ export function createXInterfaceLayoutManager(
           TIMELINE_EXPANDED_STYLES,
         );
       }
+    } else {
+      normalPrimaryWidth = null;
+      mediaWidths = new WeakMap();
     }
     if (!preference.rightSidebarVisible) {
       current.add(sidebar);

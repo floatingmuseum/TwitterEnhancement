@@ -91,6 +91,117 @@ function shadowButton(hostSelector: string): HTMLButtonElement | null {
     ?.shadowRoot?.querySelector<HTMLButtonElement>('button') ?? null;
 }
 
+function requiredElement(selector: string): HTMLElement {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (!element) {
+    throw new Error(`Missing test element: ${selector}`);
+  }
+  return element;
+}
+
+function rectWithWidth(width: number): DOMRect {
+  return {
+    bottom: 200,
+    height: 200,
+    left: 0,
+    right: width,
+    top: 0,
+    width,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
+function mockMediaWidth(element: HTMLElement, nativeWidth = 518) {
+  const primary = requiredElement('[data-testid="primaryColumn"]');
+  vi.spyOn(element, 'getBoundingClientRect').mockImplementation(() =>
+    rectWithWidth(
+      primary.style.width === '600px' || nativeWidth === 180
+        ? nativeWidth
+        : nativeWidth + 600,
+    ),
+  );
+}
+
+function renderDesktopTweetMedia() {
+  renderDesktopXLayout();
+  const primary = requiredElement('[data-testid="primaryColumn"]');
+  vi.spyOn(primary, 'getBoundingClientRect').mockImplementation(() =>
+    rectWithWidth(primary.style.maxWidth === 'none' ? 1200 : 600),
+  );
+  requiredElement('article').innerHTML = `
+    <div id="tweet-avatar"><img src="https://pbs.twimg.com/profile_images/avatar.jpg" /></div>
+    <div id="tweet-body">
+      <div data-testid="User-Name">Alice</div>
+      <div data-testid="tweetText">Tweet text keeps the expanded column width.</div>
+      <div id="single-media" style="max-width: 90% !important; box-sizing: content-box" data-twitter-enhancement-layout="original-media">
+        <div><a href="/Alice/status/1/photo/1"><div data-testid="tweetPhoto"><img /></div></a></div>
+      </div>
+      <div id="multi-media">
+        <div style="display: flex">
+          <a href="/Alice/status/2/photo/1"><div data-testid="tweetPhoto"><img /></div></a>
+          <a href="/Alice/status/2/photo/2"><div data-testid="tweetPhoto"><img /></div></a>
+        </div>
+      </div>
+      <div id="pending-video"><div data-testid="tweetPhoto"><img /><button data-testid="playButton">Play</button></div></div>
+      <div id="played-video"><div data-testid="videoPlayer"><video></video><div role="group"><button>Pause</button><button>Volume</button></div></div></div>
+      <div id="component-video"><div data-testid="videoComponent"><video></video></div></div>
+      <div id="direct-video"><video></video></div>
+      <div id="link-card"><div data-testid="card.wrapper"><a href="https://example.com"><img /><span>Link title</span></a></div></div>
+      <div id="narrow-media" style="width: 180px"><div data-testid="tweetPhoto"><img /></div></div>
+      <div role="group"><button data-testid="reply">Reply</button></div>
+    </div>
+  `;
+  for (const id of [
+    'single-media',
+    'multi-media',
+    'pending-video',
+    'played-video',
+    'component-video',
+    'direct-video',
+    'link-card',
+  ]) {
+    mockMediaWidth(requiredElement(`#${id}`));
+  }
+  mockMediaWidth(requiredElement('#narrow-media'), 180);
+  primary.insertAdjacentHTML(
+    'beforeend',
+    '<div id="profile-media-grid"><div data-testid="tweetPhoto"><img /></div></div><div role="dialog"><article><div id="dialog-media"><div data-testid="tweetPhoto"><img /></div></div></article></div>',
+  );
+  requiredElement('[data-testid="sidebarColumn"]').insertAdjacentHTML(
+    'beforeend',
+    '<article><div id="sidebar-media"><div data-testid="tweetPhoto"><img /></div></div></article>',
+  );
+  document.body.insertAdjacentHTML(
+    'beforeend',
+    '<article><div id="outside-media"><div data-testid="tweetPhoto"><img /></div></div></article>',
+  );
+  return primary;
+}
+
+async function collapseDesktopMedia(
+  leftNavigationExpanded = false,
+  rightSidebarVisible = false,
+) {
+  const primary = renderDesktopTweetMedia();
+  const storage = new FakeExtensionLocalStorage();
+  storage.values.set(
+    INTERFACE_LAYOUT_STORAGE_KEYS.leftNavigationExpanded,
+    leftNavigationExpanded,
+  );
+  storage.values.set(
+    INTERFACE_LAYOUT_STORAGE_KEYS.rightSidebarVisible,
+    rightSidebarVisible,
+  );
+  const repository = new LocalInterfaceLayoutPreferenceRepository(storage);
+  const manager = createXInterfaceLayoutManager(repository);
+  await vi.waitFor(() => {
+    expect(primary).toHaveStyle({ width: 'auto' });
+  });
+  return { manager, primary, repository };
+}
+
 describe('X interface layout manager', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -348,5 +459,279 @@ describe('X interface layout manager', () => {
       document.querySelector('[data-twitter-enhancement-right-layout-control]'),
     ).toBeNull();
     manager.destroy();
+  });
+
+  it.each([
+    { leftNavigationExpanded: false, rightSidebarVisible: false },
+    { leftNavigationExpanded: false, rightSidebarVisible: true },
+    { leftNavigationExpanded: true, rightSidebarVisible: false },
+  ])('keeps media groups at native width when side areas collapse: %j', async (preference) => {
+    const { manager, primary } = await collapseDesktopMedia(
+      preference.leftNavigationExpanded,
+      preference.rightSidebarVisible,
+    );
+
+    try {
+      for (const id of [
+        'single-media',
+        'multi-media',
+        'pending-video',
+        'played-video',
+        'component-video',
+        'direct-video',
+        'link-card',
+      ]) {
+        expect(requiredElement(`#${id}`)).toHaveStyle({
+          maxWidth: 'min(100%, 518px)',
+          boxSizing: 'border-box',
+        });
+      }
+      expect(requiredElement('#narrow-media')).toHaveStyle({
+        maxWidth: 'min(100%, 180px)',
+        width: '180px',
+      });
+      expect(primary).toHaveStyle({ maxWidth: 'none', width: 'auto' });
+      expect(requiredElement('#timeline-content')).toHaveStyle({ width: '100%' });
+      for (const selector of [
+        '#tweet-body',
+        '[data-testid="tweetText"]',
+        '#tweet-avatar',
+        '#profile-media-grid',
+        '#dialog-media',
+        '#sidebar-media',
+        '#outside-media',
+        '#multi-media [data-testid="tweetPhoto"]',
+      ]) {
+        expect(requiredElement(selector).style.maxWidth).toBe('');
+      }
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  it('measures lazy-loaded and replaced media against the native column width', async () => {
+    const { manager, primary } = await collapseDesktopMedia();
+    try {
+      requiredElement('section').insertAdjacentHTML(
+        'beforeend',
+        '<div data-testid="cellInnerDiv"><article><div data-testid="tweetText">New tweet</div><div id="lazy-media"><div data-testid="tweetPhoto"><img /></div></div><div role="group"><button data-testid="reply">Reply</button></div></article></div>',
+      );
+      const lazyMedia = requiredElement('#lazy-media');
+      mockMediaWidth(lazyMedia);
+      const pendingVideo = requiredElement('#pending-video');
+      pendingVideo.outerHTML = '<div id="replacement-video"><div data-testid="videoPlayer"><video></video></div></div>';
+      const replacementVideo = requiredElement('#replacement-video');
+      mockMediaWidth(replacementVideo);
+
+      manager.sync();
+      manager.sync();
+
+      expect(lazyMedia).toHaveStyle({ maxWidth: 'min(100%, 518px)' });
+      expect(replacementVideo).toHaveStyle({ maxWidth: 'min(100%, 518px)' });
+      expect(requiredElement('#single-media')).toHaveStyle({
+        maxWidth: 'min(100%, 518px)',
+      });
+      expect(pendingVideo.style.maxWidth).toBe('');
+      expect(primary).toHaveStyle({ maxWidth: 'none', width: 'auto' });
+      expect(requiredElement('#timeline-content')).toHaveStyle({ width: '100%' });
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  it('restores original media styles and markers when both side areas reopen', async () => {
+    const { manager, repository } = await collapseDesktopMedia();
+    const singleMedia = requiredElement('#single-media');
+    try {
+      expect(singleMedia.style.maxWidth).toBe('min(100%, 518px)');
+      await repository.setPreference('leftNavigationExpanded', true);
+      expect(singleMedia.style.maxWidth).toBe('min(100%, 518px)');
+      await repository.setPreference('rightSidebarVisible', true);
+
+      expect(singleMedia).toHaveStyle({ maxWidth: '90%', boxSizing: 'content-box' });
+      expect(singleMedia.style.getPropertyPriority('max-width')).toBe('important');
+      expect(singleMedia).toHaveAttribute('data-twitter-enhancement-layout', 'original-media');
+      expect(requiredElement('#multi-media').style.maxWidth).toBe('');
+      expect(requiredElement('#multi-media').style.boxSizing).toBe('');
+      expect(requiredElement('#multi-media')).not.toHaveAttribute('data-twitter-enhancement-layout');
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  it('retries native media measurement when the initial column has no visible width', async () => {
+    const primary = renderDesktopTweetMedia();
+    let visible = false;
+    vi.mocked(primary.getBoundingClientRect).mockImplementation(() =>
+      rectWithWidth(visible ? (primary.style.maxWidth === 'none' ? 1200 : 600) : 0),
+    );
+    const storage = new FakeExtensionLocalStorage();
+    storage.values.set(INTERFACE_LAYOUT_STORAGE_KEYS.leftNavigationExpanded, false);
+    storage.values.set(INTERFACE_LAYOUT_STORAGE_KEYS.rightSidebarVisible, false);
+    const repository = new LocalInterfaceLayoutPreferenceRepository(storage);
+    const manager = createXInterfaceLayoutManager(repository);
+    try {
+      await vi.waitFor(() => {
+        expect(requiredElement('[data-testid="sidebarColumn"]')).toHaveStyle({
+          visibility: 'hidden',
+        });
+      });
+      visible = true;
+      manager.sync();
+
+      expect(requiredElement('#single-media')).toHaveStyle({
+        maxWidth: 'min(100%, 518px)',
+      });
+      expect(primary).toHaveStyle({ maxWidth: 'none', width: 'auto' });
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  it('restores media constraints when desktop sidebar nodes disappear', async () => {
+    const { manager } = await collapseDesktopMedia();
+    try {
+      const media = requiredElement('#played-video');
+      expect(media.style.maxWidth).toBe('min(100%, 518px)');
+      requiredElement('[data-testid="sidebarColumn"]').remove();
+      manager.sync();
+      expect(media.style.maxWidth).toBe('');
+      expect(media.style.boxSizing).toBe('');
+      expect(requiredElement('#single-media').style.maxWidth).toBe('90%');
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  it('keeps the entire article preview card at native width, including its title and summary', async () => {
+    const { manager, primary } = await collapseDesktopMedia();
+    try {
+      requiredElement('#tweet-body').insertAdjacentHTML(
+        'beforeend',
+        `<div id="article-preview-card">
+          <div data-testid="article-cover-image"><img /></div>
+          <h2 id="article-preview-title">An article title</h2>
+          <div id="article-preview-summary">An article summary</div>
+        </div>`,
+      );
+      const preview = requiredElement('#article-preview-card');
+      mockMediaWidth(preview);
+
+      manager.sync();
+
+      expect(preview).toHaveStyle({
+        maxWidth: 'min(100%, 518px)',
+        boxSizing: 'border-box',
+      });
+      expect(requiredElement('[data-testid="article-cover-image"]').style.maxWidth).toBe('');
+      expect(requiredElement('#article-preview-title').style.maxWidth).toBe('');
+      expect(requiredElement('#article-preview-summary').style.maxWidth).toBe('');
+      expect(requiredElement('#tweet-body').style.maxWidth).toBe('');
+      expect(primary).toHaveStyle({ maxWidth: 'none', width: 'auto' });
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  it('leaves article read view media unrestricted while preserving limits on reply media', async () => {
+    const { manager, primary } = await collapseDesktopMedia();
+    try {
+      requiredElement('#timeline-content section').insertAdjacentHTML(
+        'beforeend',
+        `<div data-testid="cellInnerDiv">
+          <article>
+            <div data-testid="User-Name">Article author</div>
+            <article data-testid="twitterArticleReadView">
+              <div id="article-read-cover"><div data-testid="article-cover-image"><img /></div></div>
+              <div data-testid="twitterArticleRichTextView">
+                <h1>Full article title</h1><p>Full article body</p>
+                <div id="article-read-photo"><div data-testid="tweetPhoto"><img /></div></div>
+                <div id="article-read-video"><div data-testid="videoPlayer"><video></video></div></div>
+                <div id="article-read-link"><div data-testid="card.wrapper"><a href="https://example.com"><img /></a></div></div>
+              </div>
+            </article>
+            <div role="group"><button data-testid="reply">Reply</button></div>
+          </article>
+        </div>
+        <div data-testid="cellInnerDiv">
+          <article>
+            <div data-testid="User-Name">Reply author</div>
+            <div data-testid="tweetText">An ordinary reply</div>
+            <div id="article-reply-media"><div data-testid="tweetPhoto"><img /></div></div>
+            <div role="group"><button data-testid="reply">Reply</button></div>
+          </article>
+        </div>`,
+      );
+      const readView = requiredElement('[data-testid="twitterArticleReadView"]');
+      for (const element of [readView, ...readView.querySelectorAll<HTMLElement>('div')]) {
+        mockMediaWidth(element, 566);
+      }
+      const replyMedia = requiredElement('#article-reply-media');
+      mockMediaWidth(replyMedia);
+
+      manager.sync();
+
+      expect(readView.querySelector('[data-twitter-enhancement-layout="tweet-media"]')).toBeNull();
+      expect(readView.style.maxWidth).toBe('');
+      for (const element of readView.querySelectorAll<HTMLElement>('div')) {
+        expect(element.style.maxWidth).toBe('');
+        expect(element.style.boxSizing).toBe('');
+      }
+      expect(replyMedia).toHaveStyle({ maxWidth: 'min(100%, 518px)' });
+      expect(primary).toHaveStyle({ maxWidth: 'none', width: 'auto' });
+      expect(requiredElement('#timeline-content')).toHaveStyle({ width: '100%' });
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  it('restores and reapplies article media styles when the same node enters and leaves read view', async () => {
+    const { manager } = await collapseDesktopMedia();
+    try {
+      const media = requiredElement('#single-media');
+      const tweetBody = requiredElement('#tweet-body');
+      expect(media).toHaveStyle({ maxWidth: 'min(100%, 518px)' });
+      const readView = document.createElement('article');
+      readView.dataset.testid = 'twitterArticleReadView';
+      tweetBody.append(readView);
+      readView.append(media);
+
+      manager.sync();
+
+      expect(media).toHaveStyle({ maxWidth: '90%', boxSizing: 'content-box' });
+      expect(media.style.getPropertyPriority('max-width')).toBe('important');
+      expect(media).toHaveAttribute('data-twitter-enhancement-layout', 'original-media');
+
+      tweetBody.append(media);
+      readView.remove();
+      manager.sync();
+      manager.sync();
+
+      expect(media).toHaveStyle({
+        maxWidth: 'min(100%, 518px)',
+        boxSizing: 'border-box',
+      });
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  it('cleans up detached media and restores remaining media on destroy', async () => {
+    const { manager } = await collapseDesktopMedia();
+    const removedMedia = requiredElement('#single-media');
+    const remainingMedia = requiredElement('#link-card');
+    expect(removedMedia.style.maxWidth).toBe('min(100%, 518px)');
+    expect(remainingMedia.style.maxWidth).toBe('min(100%, 518px)');
+
+    removedMedia.remove();
+    manager.sync();
+    expect(removedMedia).toHaveStyle({ maxWidth: '90%', boxSizing: 'content-box' });
+    expect(removedMedia.style.getPropertyPriority('max-width')).toBe('important');
+    expect(removedMedia).toHaveAttribute('data-twitter-enhancement-layout', 'original-media');
+
+    manager.destroy();
+    expect(remainingMedia.style.maxWidth).toBe('');
+    expect(remainingMedia.style.boxSizing).toBe('');
+    expect(remainingMedia).not.toHaveAttribute('data-twitter-enhancement-layout');
   });
 });
