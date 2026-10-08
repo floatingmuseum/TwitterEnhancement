@@ -6,6 +6,7 @@ import {
   type ListRepostPreferenceRepository,
   type ListRepostPreferences,
 } from '../../features/list-reposts/list-repost-preference';
+import { isPromotedTweetArticle } from './promoted-tweet';
 import { isDarkXPage } from './theme';
 
 export type XRepostTimelineSurface = 'home' | 'list' | 'profile';
@@ -36,8 +37,11 @@ interface InlineDisplayState {
 
 interface HiddenArticleState extends InlineDisplayState {
   mode: HiddenRepostDisplayMode;
+  kind: HiddenArticleKind;
   placeholderHost: HTMLElement | null;
 }
+
+type HiddenArticleKind = 'plain-repost' | 'promoted-tweet';
 
 const LIST_ROUTE_PATTERNS = [
   /^\/i\/lists\/(\d+)\/?$/,
@@ -220,37 +224,47 @@ export function isPlainRepostArticle(article: HTMLElement): boolean {
     : false;
 }
 
-class PlainRepostVisibilityController {
+function getHiddenArticleKind(
+  article: HTMLElement,
+  preferences: ListRepostPreferences,
+): HiddenArticleKind | null {
+  if (isPromotedTweetArticle(article)) {
+    return preferences.hideAds ? 'promoted-tweet' : null;
+  }
+  return !preferences.showReposts && isPlainRepostArticle(article)
+    ? 'plain-repost'
+    : null;
+}
+
+class TimelineArticleVisibilityController {
   private readonly hiddenArticles = new Map<HTMLElement, HiddenArticleState>();
   private readonly expandedTweetIds = new Set<string>();
   private expandedArticles = new WeakSet<HTMLElement>();
 
   sync(timeline: HTMLElement, preferences: ListRepostPreferences): void {
     for (const article of [...this.hiddenArticles.keys()]) {
+      const kind = getHiddenArticleKind(article, preferences);
       if (
-        preferences.showReposts ||
         !article.isConnected ||
         !timeline.contains(article) ||
-        !isPlainRepostArticle(article) ||
-        this.isTemporarilyExpanded(article)
+        !kind ||
+        (kind === 'plain-repost' && this.isTemporarilyExpanded(article))
       ) {
         this.restore(article);
       }
     }
 
-    if (preferences.showReposts) {
-      return;
-    }
-
     for (const article of timeline.querySelectorAll<HTMLElement>('article')) {
-      if (
-        !isPlainRepostArticle(article) ||
-        this.isTemporarilyExpanded(article)
-      ) {
+      const kind = getHiddenArticleKind(article, preferences);
+      if (!kind || (kind === 'plain-repost' && this.isTemporarilyExpanded(article))) {
         continue;
       }
 
-      this.hide(article, preferences.hiddenRepostDisplayMode);
+      this.hide(
+        article,
+        kind === 'promoted-tweet' ? 'hidden' : preferences.hiddenRepostDisplayMode,
+        kind,
+      );
     }
   }
 
@@ -266,22 +280,28 @@ class PlainRepostVisibilityController {
     this.expandedArticles = new WeakSet<HTMLElement>();
   }
 
-  private hide(article: HTMLElement, mode: HiddenRepostDisplayMode): void {
+  private hide(
+    article: HTMLElement,
+    mode: HiddenRepostDisplayMode,
+    kind: HiddenArticleKind,
+  ): void {
     let state = this.hiddenArticles.get(article);
     if (!state) {
       state = {
         value: article.style.getPropertyValue('display'),
         priority: article.style.getPropertyPriority('display'),
         mode,
+        kind,
         placeholderHost: null,
       };
       this.hiddenArticles.set(article, state);
     }
 
-    if (state.mode !== mode) {
+    if (state.mode !== mode || state.kind !== kind) {
       state.placeholderHost?.remove();
       state.placeholderHost = null;
       state.mode = mode;
+      state.kind = kind;
     }
 
     if (mode !== 'hidden' && !state.placeholderHost) {
@@ -292,7 +312,13 @@ class PlainRepostVisibilityController {
       this.updatePlaceholderLabel(state.placeholderHost, article);
     }
 
-    article.dataset.twitterEnhancementHiddenPlainRepost = mode;
+    delete article.dataset.twitterEnhancementHiddenPlainRepost;
+    delete article.dataset.twitterEnhancementHiddenPromotedTweet;
+    if (kind === 'promoted-tweet') {
+      article.dataset.twitterEnhancementHiddenPromotedTweet = mode;
+    } else {
+      article.dataset.twitterEnhancementHiddenPlainRepost = mode;
+    }
     article.style.setProperty('display', 'none', 'important');
   }
 
@@ -349,7 +375,10 @@ class PlainRepostVisibilityController {
     return host;
   }
 
-  private updatePlaceholderLabel(host: HTMLElement, article: HTMLElement): void {
+  private updatePlaceholderLabel(
+    host: HTMLElement,
+    article: HTMLElement,
+  ): void {
     const label = getPlainRepostLabel(article);
     const button = host.shadowRoot?.querySelector<HTMLButtonElement>('button');
     const labelElement = host.shadowRoot?.querySelector<HTMLElement>(
@@ -391,6 +420,7 @@ class PlainRepostVisibilityController {
       article.style.setProperty('display', previous.value, previous.priority);
     }
     delete article.dataset.twitterEnhancementHiddenPlainRepost;
+    delete article.dataset.twitterEnhancementHiddenPromotedTweet;
     this.hiddenArticles.delete(article);
   }
 }
@@ -407,6 +437,15 @@ function getPlainRepostLabel(article: HTMLElement): string {
 
 function extractTweetId(article: HTMLElement): string | null {
   for (const link of article.querySelectorAll<HTMLAnchorElement>('a[href*="/status/"]')) {
+    if (link.closest('article') !== article) {
+      continue;
+    }
+    const contentContainer = link.parentElement?.closest(
+      '[data-testid="tweetText"], [data-testid="quoteTweet"], [data-testid="card.wrapper"], [role="link"]',
+    );
+    if (contentContainer && article.contains(contentContainer)) {
+      continue;
+    }
     try {
       const match = new URL(link.getAttribute('href') ?? '', 'https://x.com').pathname.match(
         /^\/[a-z0-9_]+\/status\/(\d+)/i,
@@ -430,7 +469,7 @@ export function createXRepostTimelineManager(
   mount: MountXRepostTimelineControl,
   repository: ListRepostPreferenceRepository,
 ): XRepostTimelineManager {
-  const visibility = new PlainRepostVisibilityController();
+  const visibility = new TimelineArticleVisibilityController();
   let currentTimeline: HTMLElement | null = null;
   let currentRouteKey: string | null = null;
   let mounted: MountedXRepostTimelineControl | null = null;
@@ -438,7 +477,8 @@ export function createXRepostTimelineManager(
     ...DEFAULT_LIST_REPOST_PREFERENCES,
   };
   let destroyed = false;
-  let preferenceRevision = 0;
+  let preferencesLoaded = false;
+  let pendingPreferenceChanges: ListRepostPreferenceChange = {};
 
   const applyPreference = (change: ListRepostPreferenceChange) => {
     preferences = { ...preferences, ...change };
@@ -448,18 +488,23 @@ export function createXRepostTimelineManager(
   };
 
   const unsubscribe = repository.subscribe((change) => {
-    preferenceRevision += 1;
+    if (!preferencesLoaded) {
+      pendingPreferenceChanges = { ...pendingPreferenceChanges, ...change };
+    }
     applyPreference(change);
   });
-  const loadRevision = preferenceRevision;
   void repository
     .getPreferences()
     .then((storedPreferences) => {
-      if (!destroyed && preferenceRevision === loadRevision) {
-        applyPreference(storedPreferences);
+      preferencesLoaded = true;
+      if (!destroyed) {
+        applyPreference({ ...storedPreferences, ...pendingPreferenceChanges });
       }
+      pendingPreferenceChanges = {};
     })
     .catch(() => {
+      preferencesLoaded = true;
+      pendingPreferenceChanges = {};
       // Keep the privacy-oriented default when storage is temporarily unavailable.
     });
 

@@ -7,7 +7,7 @@
 Twitter Enhancement 是一个 WXT 驱动的 Chromium 扩展，使用 React、TypeScript 和 Vitest。扩展只在本地保存数据，目前围绕 X / Twitter 提供三类能力：
 
 - 用户私人备注：在个人主页和悬浮卡片中显示、编辑、删除备注。
-- 列表页纯转贴过滤：在列表资料卡上挂载开关，并隐藏或折叠纯转贴。
+- 时间线过滤：在首页、列表页和用户主页“帖子”提供转贴开关及收起效果；广告由设置页独立开关控制，默认直接隐藏，不提供展开占位。
 - 视频下载：从 X 页面和捕获到的推文媒体数据中选择可下载的 MP4。
 
 扩展内容脚本只匹配 `https://x.com/*` 和 `https://twitter.com/*`。数据存储在浏览器扩展的 `storage.local`，不要引入远端同步、埋点或网络上传，除非用户明确要求。
@@ -81,7 +81,7 @@ X 页面结构经常变化。修改 `src/platform/x/` 时要特别注意：
 - 保留现有路由过滤，避免把 `/home`、`/explore`、`/status/...` 等页面误判为用户主页。
 - DOM 识别应尽量从稳定语义开始，例如 `data-testid`、`role`、URL path，再回退到文本。
 - 对 hover card、profile、list timeline、article action bar 分别加测试，不要只覆盖当前页面截图中的一种结构。
-- 列表转贴隐藏会改写宿主 article 的 `display`，必须保存并恢复原始 inline style。
+- 转贴和广告隐藏会改写宿主 article 的 `display`，必须保存并恢复原始 inline style。广告文字识别限定在推文头部，避免将正文、用户名或引用内容误判为广告；广告偏好独立于转贴开关、收起效果及临时展开状态。
 - 视频下载目标要同时考虑未播放视频、已播放视频、poster、resource timing 和数据桥回填。
 
 ## Git 与产物

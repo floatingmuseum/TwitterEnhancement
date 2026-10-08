@@ -1,5 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ListRepostPreferences } from '../src/features/list-reposts/list-repost-preference';
 import { NoteSettingsPage } from '../src/features/user-notes/NoteSettingsPage';
 import {
   INTERFACE_MODULE_VISIBILITY_STORAGE_KEYS,
@@ -7,7 +8,9 @@ import {
 } from '../src/shared/storage/interface-module-visibility-repository';
 import {
   HIDDEN_REPOST_DISPLAY_MODE_STORAGE_KEY,
+  HIDE_ADS_STORAGE_KEY,
   LocalListRepostPreferenceRepository,
+  SHOW_LIST_REPOSTS_STORAGE_KEY,
 } from '../src/shared/storage/list-repost-preference-repository';
 import { LocalUserNoteRepository } from '../src/shared/storage/user-note-repository';
 import { FakeExtensionLocalStorage } from './fakes/fake-storage';
@@ -87,6 +90,9 @@ describe('NoteSettingsPage', () => {
     const hiddenMode = await screen.findByRole('radio', { name: /完全隐藏/ });
     const dividerMode = screen.getByRole('radio', { name: /灰线提示/ });
     expect(
+      screen.getByRole('heading', { name: '隐藏转贴的呈现方式' }),
+    ).toBeInTheDocument();
+    expect(
       screen.getAllByText('一条来自某用户的转贴已被收起，点击可还原'),
     ).toHaveLength(3);
     expect(hiddenMode).toBeChecked();
@@ -127,5 +133,147 @@ describe('NoteSettingsPage', () => {
     expect(
       storage.values.get(INTERFACE_MODULE_VISIBILITY_STORAGE_KEYS.trends),
     ).toBe(false);
+  });
+
+  it('enables ad hiding by default and persists it independently of repost settings', async () => {
+    const user = userEvent.setup();
+    const storage = new FakeExtensionLocalStorage();
+    const listRepostRepository = new LocalListRepostPreferenceRepository(storage);
+    await listRepostRepository.setShowReposts(true);
+    await listRepostRepository.setHiddenRepostDisplayMode('social-context');
+    render(
+      <NoteSettingsPage
+        repository={new LocalUserNoteRepository(storage)}
+        interfaceModuleRepository={new LocalInterfaceModuleVisibilityRepository(storage)}
+        listRepostRepository={listRepostRepository}
+      />,
+    );
+
+    const adSwitch = await screen.findByRole('switch', { name: '隐藏广告' });
+    const sourceMode = screen.getByRole('radio', { name: /保留转贴来源/ });
+    await waitFor(() => expect(adSwitch).toBeEnabled());
+    expect(adSwitch).toBeChecked();
+    expect(sourceMode).toBeChecked();
+    expect(adSwitch.closest('section')).not.toBe(sourceMode.closest('section'));
+
+    await user.click(adSwitch);
+
+    expect(adSwitch).not.toBeChecked();
+    expect(storage.values.get(HIDE_ADS_STORAGE_KEY)).toBe(false);
+    expect(storage.values.get(SHOW_LIST_REPOSTS_STORAGE_KEY)).toBe(true);
+    expect(sourceMode).toBeChecked();
+    const dividerMode = screen.getByRole('radio', { name: /灰线提示/ });
+    await user.click(dividerMode);
+    expect(dividerMode).toBeChecked();
+    expect(storage.values.get(HIDE_ADS_STORAGE_KEY)).toBe(false);
+    expect(storage.values.get(SHOW_LIST_REPOSTS_STORAGE_KEY)).toBe(true);
+  });
+
+  it('rolls back a failed ad setting save without affecting repost settings', async () => {
+    const user = userEvent.setup();
+    const storage = new FakeExtensionLocalStorage();
+    const listRepostRepository = new LocalListRepostPreferenceRepository(storage);
+    const save = vi.spyOn(listRepostRepository, 'setHideAds').mockRejectedValueOnce(
+      new Error('Storage unavailable'),
+    );
+    render(
+      <NoteSettingsPage
+        repository={new LocalUserNoteRepository(storage)}
+        interfaceModuleRepository={new LocalInterfaceModuleVisibilityRepository(storage)}
+        listRepostRepository={listRepostRepository}
+      />,
+    );
+    const adSwitch = await screen.findByRole('switch', { name: '隐藏广告' });
+    await waitFor(() => expect(adSwitch).toBeEnabled());
+
+    await user.click(adSwitch);
+
+    expect(save).toHaveBeenCalledWith(false);
+    expect(await screen.findByRole('alert')).toHaveTextContent('广告设置保存失败，请重试。');
+    expect(adSwitch).toBeChecked();
+    expect(adSwitch).toBeEnabled();
+    const dividerMode = screen.getByRole('radio', { name: /灰线提示/ });
+    await user.click(dividerMode);
+    expect(dividerMode).toBeChecked();
+    expect(adSwitch).toBeChecked();
+    expect(screen.getByRole('alert')).toHaveTextContent('广告设置保存失败，请重试。');
+  });
+
+  it('allows repost changes while an ad setting save is pending', async () => {
+    const user = userEvent.setup();
+    const storage = new FakeExtensionLocalStorage();
+    const listRepostRepository = new LocalListRepostPreferenceRepository(storage);
+    let finishSave: (() => void) | undefined;
+    const pendingSave = new Promise<void>((resolve) => {
+      finishSave = resolve;
+    });
+    const persistHideAds = listRepostRepository.setHideAds.bind(listRepostRepository);
+    vi.spyOn(listRepostRepository, 'setHideAds').mockImplementationOnce(async (hideAds) => {
+      await pendingSave;
+      await persistHideAds(hideAds);
+    });
+    render(
+      <NoteSettingsPage
+        repository={new LocalUserNoteRepository(storage)}
+        interfaceModuleRepository={new LocalInterfaceModuleVisibilityRepository(storage)}
+        listRepostRepository={listRepostRepository}
+      />,
+    );
+    const adSwitch = await screen.findByRole('switch', { name: '隐藏广告' });
+    await waitFor(() => expect(adSwitch).toBeEnabled());
+
+    await user.click(adSwitch);
+    expect(adSwitch).toBeDisabled();
+    const dividerMode = screen.getByRole('radio', { name: /灰线提示/ });
+    expect(dividerMode).toBeEnabled();
+    await user.click(dividerMode);
+    expect(dividerMode).toBeChecked();
+    expect(adSwitch).not.toBeChecked();
+
+    await act(async () => {
+      finishSave?.();
+    });
+    await waitFor(() => expect(adSwitch).toBeEnabled());
+    expect(storage.values.get(HIDE_ADS_STORAGE_KEY)).toBe(false);
+    expect(storage.values.get(HIDDEN_REPOST_DISPLAY_MODE_STORAGE_KEY)).toBe('divider');
+  });
+
+  it('loads repost preferences without overwriting a newer ad subscription update', async () => {
+    const storage = new FakeExtensionLocalStorage();
+    const listRepostRepository = new LocalListRepostPreferenceRepository(storage);
+    let finishLoad: ((preferences: ListRepostPreferences) => void) | undefined;
+    const pendingLoad = new Promise<ListRepostPreferences>((resolve) => {
+      finishLoad = resolve;
+    });
+    vi.spyOn(listRepostRepository, 'getPreferences').mockReturnValue(pendingLoad);
+    render(
+      <NoteSettingsPage
+        repository={new LocalUserNoteRepository(storage)}
+        interfaceModuleRepository={new LocalInterfaceModuleVisibilityRepository(storage)}
+        listRepostRepository={listRepostRepository}
+      />,
+    );
+    const adSwitch = screen.getByRole('switch', { name: '隐藏广告' });
+    const sourceMode = screen.getByRole('radio', { name: /保留转贴来源/ });
+    expect(adSwitch).toBeDisabled();
+    expect(sourceMode).toBeDisabled();
+
+    await act(async () => {
+      await listRepostRepository.setHideAds(false);
+    });
+    expect(adSwitch).not.toBeChecked();
+    expect(adSwitch).toBeEnabled();
+    expect(sourceMode).toBeDisabled();
+
+    await act(async () => {
+      finishLoad?.({
+        showReposts: false,
+        hideAds: true,
+        hiddenRepostDisplayMode: 'social-context',
+      });
+    });
+    expect(sourceMode).toBeChecked();
+    expect(sourceMode).toBeEnabled();
+    expect(adSwitch).not.toBeChecked();
   });
 });

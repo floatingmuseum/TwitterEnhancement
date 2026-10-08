@@ -52,13 +52,21 @@ class PreviewInterfaceModuleRepository
 
 class PreviewListRepostRepository implements ListRepostPreferenceRepository {
   private mode: HiddenRepostDisplayMode = 'hidden';
+  private hideAds = true;
   private readonly listeners = new Set<ListRepostPreferenceListener>();
 
   async getPreferences() {
-    return { showReposts: false, hiddenRepostDisplayMode: this.mode };
+    return { showReposts: false, hideAds: this.hideAds, hiddenRepostDisplayMode: this.mode };
   }
 
   async setShowReposts(): Promise<void> {}
+
+  async setHideAds(hideAds: boolean): Promise<void> {
+    this.hideAds = hideAds;
+    for (const listener of this.listeners) {
+      listener({ hideAds });
+    }
+  }
 
   async setHiddenRepostDisplayMode(mode: HiddenRepostDisplayMode): Promise<void> {
     this.mode = mode;

@@ -2,6 +2,7 @@ import type {
   HiddenRepostDisplayMode,
   ListRepostPreferenceListener,
   ListRepostPreferenceRepository,
+  ListRepostPreferences,
 } from '../src/features/list-reposts/list-repost-preference';
 import {
   createXRepostTimelineManager,
@@ -18,12 +19,14 @@ class FakeListRepostPreferenceRepository
   constructor(
     public showReposts = false,
     public hiddenRepostDisplayMode: HiddenRepostDisplayMode = 'hidden',
+    public hideAds = true,
   ) {}
 
   async getPreferences() {
     return {
       showReposts: this.showReposts,
       hiddenRepostDisplayMode: this.hiddenRepostDisplayMode,
+      hideAds: this.hideAds,
     };
   }
 
@@ -31,6 +34,13 @@ class FakeListRepostPreferenceRepository
     this.showReposts = showReposts;
     for (const listener of this.listeners) {
       listener({ showReposts });
+    }
+  }
+
+  async setHideAds(hideAds: boolean): Promise<void> {
+    this.hideAds = hideAds;
+    for (const listener of this.listeners) {
+      listener({ hideAds });
     }
   }
 
@@ -143,6 +153,32 @@ function renderProfilePage() {
       </div>
     </main>
   `;
+}
+
+function appendPromotedTweet(id = 'promoted-tweet', tweetId = '987'): HTMLElement {
+  const timeline = document.querySelector('.timeline');
+  if (!timeline) {
+    throw new Error('Expected a rendered timeline');
+  }
+
+  const cell = document.createElement('div');
+  cell.dataset.testid = 'cellInnerDiv';
+  const article = document.createElement('article');
+  article.id = id;
+  article.style.setProperty('display', 'flex', 'important');
+  article.innerHTML = `
+    <div class="tweet-header">
+      <div data-testid="User-Name">
+        <a href="/advertiser"><span>Advertiser</span><span>@advertiser</span></a>
+      </div>
+      <div><span class="ad-label">广告</span><button data-testid="caret">更多</button></div>
+    </div>
+    <a href="/advertiser/status/${tweetId}"><time>1小时</time></a>
+    <div data-testid="tweetText">新品介绍</div>
+  `;
+  cell.append(article);
+  timeline.append(cell);
+  return article;
 }
 
 describe('X repost timeline manager', () => {
@@ -427,4 +463,285 @@ describe('X repost timeline manager', () => {
 
     manager.destroy();
   });
+
+  it.each([
+    { render: renderHomePage, url: 'https://x.com/home', mode: 'hidden' },
+    {
+      render: renderListPage,
+      url: 'https://x.com/i/lists/1440581055191269380',
+      mode: 'divider',
+    },
+    {
+      render: renderProfilePage,
+      url: 'https://x.com/alice',
+      mode: 'social-context',
+    },
+  ] as const)('hides ads without a placeholder regardless of $mode mode on $url', async ({ render, url, mode }) => {
+    render();
+    const article = appendPromotedTweet();
+    const repository = new FakeListRepostPreferenceRepository(false, mode);
+    const manager = createXRepostTimelineManager(
+      () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
+      repository,
+    );
+    await Promise.resolve();
+    manager.sync(document, new URL(url));
+
+    expect(article.style.getPropertyValue('display')).toBe('none');
+    expect(article.style.getPropertyPriority('display')).toBe('important');
+    expect(article).toHaveAttribute('data-twitter-enhancement-hidden-promoted-tweet', 'hidden');
+    expect(article).not.toHaveAttribute('data-twitter-enhancement-hidden-plain-repost');
+    expect(article.parentElement?.querySelector('[data-twitter-enhancement-repost-placeholder]'))
+      .toBeNull();
+    manager.destroy();
+  });
+
+  it.each([
+    { showReposts: false, hideAds: true },
+    { showReposts: true, hideAds: true },
+    { showReposts: false, hideAds: false },
+    { showReposts: true, hideAds: false },
+  ])('applies independent stored preferences $showReposts / $hideAds', async ({ showReposts, hideAds }) => {
+    renderHomePage();
+    const article = appendPromotedTweet();
+    const repository = new FakeListRepostPreferenceRepository(showReposts, 'divider', hideAds);
+    const manager = createXRepostTimelineManager(
+      () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
+      repository,
+    );
+    await Promise.resolve();
+    manager.sync(document, new URL('https://x.com/home'));
+
+    expect(article.style.display).toBe(hideAds ? 'none' : 'flex');
+    expect(document.querySelector<HTMLElement>('#home-repost')?.style.display)
+      .toBe(showReposts ? '' : 'none');
+    expect(article.parentElement?.querySelector('[data-twitter-enhancement-repost-placeholder]'))
+      .toBeNull();
+    manager.destroy();
+  });
+
+  it('keeps live ad and repost preference changes independent', async () => {
+    renderHomePage();
+    const article = appendPromotedTweet();
+    const repost = document.querySelector<HTMLElement>('#home-repost')!;
+    const repository = new FakeListRepostPreferenceRepository(false, 'divider');
+    const manager = createXRepostTimelineManager(
+      () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
+      repository,
+    );
+    await Promise.resolve();
+    manager.sync(document, new URL('https://x.com/home'));
+    const repostPlaceholder = repost.previousElementSibling;
+
+    await repository.setHideAds(false);
+    expect(article.style.getPropertyValue('display')).toBe('flex');
+    expect(article.style.getPropertyPriority('display')).toBe('important');
+    expect(article).not.toHaveAttribute('data-twitter-enhancement-hidden-promoted-tweet');
+    expect(repost.style.display).toBe('none');
+    expect(repost.previousElementSibling).toBe(repostPlaceholder);
+
+    await repository.setHideAds(true);
+    await repository.setShowReposts(true);
+    expect(repost.style.display).toBe('');
+    expect(repostPlaceholder?.isConnected).toBe(false);
+    expect(article.style.display).toBe('none');
+    const newAd = appendPromotedTweet('new-ad', '988');
+    manager.sync(document, new URL('https://x.com/home'));
+    expect(newAd.style.display).toBe('none');
+
+    await repository.setShowReposts(false);
+    await repository.setHiddenRepostDisplayMode('social-context');
+    expect(repost.previousElementSibling).toHaveAttribute(
+      'data-twitter-enhancement-repost-placeholder', 'social-context',
+    );
+    expect(article.style.display).toBe('none');
+    expect(article.parentElement?.querySelector('[data-twitter-enhancement-repost-placeholder]'))
+      .toBeNull();
+    manager.destroy();
+  });
+
+  it('merges an early ad setting change without losing stored repost preferences', async () => {
+    renderHomePage();
+    const article = appendPromotedTweet();
+    const repository = new FakeListRepostPreferenceRepository();
+    let resolvePreferences: ((value: ListRepostPreferences) => void) | undefined;
+    vi.spyOn(repository, 'getPreferences').mockImplementation(() => new Promise((resolve) => {
+      resolvePreferences = resolve;
+    }));
+    const manager = createXRepostTimelineManager(
+      () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
+      repository,
+    );
+    manager.sync(document, new URL('https://x.com/home'));
+    await repository.setHideAds(false);
+    resolvePreferences?.({ showReposts: true, hiddenRepostDisplayMode: 'social-context', hideAds: true });
+    await Promise.resolve();
+
+    expect(article.style.display).toBe('flex');
+    const repost = document.querySelector<HTMLElement>('#home-repost')!;
+    expect(repost.style.display).toBe('');
+    await repository.setShowReposts(false);
+    expect(repost.previousElementSibling).toHaveAttribute(
+      'data-twitter-enhancement-repost-placeholder', 'social-context',
+    );
+    expect(article.style.display).toBe('flex');
+    manager.destroy();
+  });
+
+  it('never temporarily expands an ad when the same tweet was expanded as a repost', async () => {
+    renderHomePage();
+    const ad = appendPromotedTweet('ad-of-reposted-tweet', '321');
+    const repost = document.querySelector<HTMLElement>('#home-repost')!;
+    const repository = new FakeListRepostPreferenceRepository(false, 'divider');
+    const manager = createXRepostTimelineManager(
+      () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
+      repository,
+    );
+    await Promise.resolve();
+    manager.sync(document, new URL('https://x.com/home'));
+
+    repost.previousElementSibling?.shadowRoot?.querySelector('button')?.click();
+    manager.sync(document, new URL('https://x.com/home'));
+    expect(repost.style.display).toBe('');
+    expect(ad.style.display).toBe('none');
+    expect(ad.parentElement?.querySelector('[data-twitter-enhancement-repost-placeholder]'))
+      .toBeNull();
+
+    await repository.setHideAds(false);
+    expect(ad.style.display).toBe('flex');
+    await repository.setHideAds(true);
+    expect(ad.style.display).toBe('none');
+    expect(repost.style.display).toBe('');
+    manager.destroy();
+  });
+
+  it('filters newly loaded ads and restores an article recycled into an ordinary tweet', async () => {
+    renderListPage();
+    const repository = new FakeListRepostPreferenceRepository(false, 'social-context');
+    const manager = createXRepostTimelineManager(
+      () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
+      repository,
+    );
+    await Promise.resolve();
+    manager.sync(document, listUrl);
+
+    const article = appendPromotedTweet();
+    manager.sync(document, listUrl);
+    expect(article.style.display).toBe('none');
+    expect(article.parentElement?.querySelector('[data-twitter-enhancement-repost-placeholder]'))
+      .toBeNull();
+
+    article.querySelector('.ad-label')?.remove();
+    article.querySelector('a[href*="/status/"]')?.setAttribute('href', '/advertiser/status/989');
+    manager.sync(document, listUrl);
+
+    expect(article.style.getPropertyValue('display')).toBe('flex');
+    expect(article.style.getPropertyPriority('display')).toBe('important');
+    expect(article).not.toHaveAttribute('data-twitter-enhancement-hidden-promoted-tweet');
+    manager.destroy();
+  });
+
+  it('keeps expansion scoped to a repost instead of its quoted tweet', async () => {
+    renderListPage();
+    const firstRepost = appendPromotedTweet('first-quote-repost', '987');
+    const secondRepost = appendPromotedTweet('second-quote-repost', '988');
+    for (const article of [firstRepost, secondRepost]) {
+      article.querySelector('.ad-label')?.remove();
+      article.insertAdjacentHTML('afterbegin', '<div data-testid="socialContext">alice 已转帖</div>');
+      const statusLink = article.querySelector('a[href*="/status/"]');
+      const href = statusLink?.getAttribute('href');
+      statusLink?.remove();
+      article.insertAdjacentHTML('beforeend', `
+        <div role="link">
+          <a role="link" href="/source/status/123"><time>昨天</time></a>
+          <div data-testid="tweetText">引用内容</div>
+        </div>
+        <div role="group"><a role="link" href="${href}/analytics">查看分析</a></div>
+      `);
+    }
+    const repository = new FakeListRepostPreferenceRepository(false, 'divider');
+    const manager = createXRepostTimelineManager(
+      () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
+      repository,
+    );
+    await Promise.resolve();
+    manager.sync(document, listUrl);
+
+    firstRepost.previousElementSibling?.shadowRoot?.querySelector('button')?.click();
+    manager.sync(document, listUrl);
+    expect(firstRepost.style.display).toBe('flex');
+    expect(secondRepost.style.display).toBe('none');
+    expect(document.querySelector<HTMLElement>('#plain-repost')?.style.display).toBe('none');
+
+    const replacement = firstRepost.cloneNode(true) as HTMLElement;
+    firstRepost.replaceWith(replacement);
+    manager.sync(document, listUrl);
+    expect(replacement.style.display).toBe('flex');
+    manager.destroy();
+  });
+
+  it('removes the repost placeholder when an article becomes an ad', async () => {
+    renderHomePage();
+    const article = appendPromotedTweet();
+    const repository = new FakeListRepostPreferenceRepository(false, 'social-context');
+    const manager = createXRepostTimelineManager(
+      () => ({ updateAppearance: vi.fn(), destroy: vi.fn() }),
+      repository,
+    );
+    await Promise.resolve();
+    manager.sync(document, new URL('https://x.com/home'));
+    const adContents = article.innerHTML;
+    article.innerHTML = '<div data-testid="socialContext">alice 已转帖</div>';
+    manager.sync(document, new URL('https://x.com/home'));
+
+    expect(article).not.toHaveAttribute('data-twitter-enhancement-hidden-promoted-tweet');
+    expect(article).toHaveAttribute('data-twitter-enhancement-hidden-plain-repost');
+    const repostPlaceholder = article.previousElementSibling;
+    expect(repostPlaceholder?.shadowRoot?.querySelector('button')).toHaveAccessibleName(
+      '一条来自 alice 的转贴已被收起，点击可还原',
+    );
+
+    article.innerHTML = adContents;
+    manager.sync(document, new URL('https://x.com/home'));
+
+    expect(repostPlaceholder?.isConnected).toBe(false);
+    expect(article).not.toHaveAttribute('data-twitter-enhancement-hidden-plain-repost');
+    expect(article).toHaveAttribute('data-twitter-enhancement-hidden-promoted-tweet');
+    expect(article.parentElement?.querySelectorAll('[data-twitter-enhancement-repost-placeholder]'))
+      .toHaveLength(0);
+    manager.destroy();
+    expect(article.style.getPropertyValue('display')).toBe('flex');
+    expect(article.style.getPropertyPriority('display')).toBe('important');
+  });
+
+  it.each(['route exit', 'destroy'] as const)(
+    'restores ad display and priority on %s',
+    async (cleanup) => {
+      renderProfilePage();
+      const article = appendPromotedTweet();
+      const repository = new FakeListRepostPreferenceRepository(false, 'social-context');
+      const destroy = vi.fn();
+      const manager = createXRepostTimelineManager(
+        () => ({ updateAppearance: vi.fn(), destroy }),
+        repository,
+      );
+      await Promise.resolve();
+      manager.sync(document, new URL('https://x.com/alice'));
+      expect(article.style.display).toBe('none');
+      expect(article.parentElement?.querySelector('[data-twitter-enhancement-repost-placeholder]'))
+        .toBeNull();
+
+      if (cleanup === 'route exit') {
+        manager.sync(document, new URL('https://x.com/alice/status/654'));
+      } else {
+        manager.destroy();
+      }
+
+      expect(article.style.getPropertyValue('display')).toBe('flex');
+      expect(article.style.getPropertyPriority('display')).toBe('important');
+      expect(article).not.toHaveAttribute('data-twitter-enhancement-hidden-promoted-tweet');
+      expect(destroy).toHaveBeenCalledOnce();
+      manager.destroy();
+    },
+  );
 });

@@ -15,9 +15,10 @@ class FakeRepostPreferenceRepository
 {
   private readonly listeners = new Set<ListRepostPreferenceListener>();
   showReposts = false;
+  hideAds = true;
 
   async getPreferences() {
-    return { showReposts: this.showReposts, hiddenRepostDisplayMode: 'hidden' as const };
+    return { showReposts: this.showReposts, hideAds: this.hideAds, hiddenRepostDisplayMode: 'hidden' as const };
   }
 
   async setShowReposts(showReposts: boolean): Promise<void> {
@@ -28,6 +29,13 @@ class FakeRepostPreferenceRepository
   }
 
   async setHiddenRepostDisplayMode(): Promise<void> {}
+
+  async setHideAds(hideAds: boolean): Promise<void> {
+    this.hideAds = hideAds;
+    for (const listener of this.listeners) {
+      listener({ hideAds });
+    }
+  }
 
   subscribe(listener: ListRepostPreferenceListener): () => void {
     this.listeners.add(listener);
@@ -122,6 +130,9 @@ describe('repost timeline control', () => {
     ).toBe(true);
     expect(buttons.every((button) => button.getAttribute('aria-checked') === 'false'))
       .toBe(true);
+    for (const button of buttons) {
+      expect(button).toHaveAccessibleName('显示转贴');
+    }
 
     await user.click(buttons[0] as HTMLButtonElement);
 

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import type {
-  HiddenRepostDisplayMode,
-  ListRepostPreferenceRepository,
+import {
+  DEFAULT_LIST_REPOST_PREFERENCES,
+  type HiddenRepostDisplayMode,
+  type ListRepostPreferenceRepository,
 } from './list-repost-preference';
 
 interface ListRepostSettingsProps {
@@ -33,6 +34,15 @@ const DISPLAY_MODE_OPTIONS: readonly DisplayModeOption[] = [
 ];
 
 export function ListRepostSettings({ repository }: ListRepostSettingsProps) {
+  return (
+    <>
+      <RepostDisplaySettings repository={repository} />
+      <AdFilterSettings repository={repository} />
+    </>
+  );
+}
+
+function RepostDisplaySettings({ repository }: ListRepostSettingsProps) {
   const [selectedMode, setSelectedMode] =
     useState<HiddenRepostDisplayMode>('hidden');
   const [isLoading, setIsLoading] = useState(true);
@@ -147,6 +157,106 @@ export function ListRepostSettings({ repository }: ListRepostSettingsProps) {
       {saveError ? (
         <p className="repost-settings__error" role="alert">
           显示方式保存失败，请重试。
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function AdFilterSettings({ repository }: ListRepostSettingsProps) {
+  const [hideAds, setHideAds] = useState(DEFAULT_LIST_REPOST_PREFERENCES.hideAds);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<'load' | 'save' | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let preferenceRevision = 0;
+    const unsubscribe = repository.subscribe((change) => {
+      if (active && change.hideAds !== undefined) {
+        preferenceRevision += 1;
+        setHideAds(change.hideAds);
+        setIsLoading(false);
+        setError(null);
+      }
+    });
+
+    void repository
+      .getPreferences()
+      .then((preferences) => {
+        if (active && preferenceRevision === 0) {
+          setHideAds(preferences.hideAds);
+          setIsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active && preferenceRevision === 0) {
+          setIsLoading(false);
+          setError('load');
+        }
+      });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [repository]);
+
+  async function updateHideAds(nextHideAds: boolean) {
+    if (isLoading || isSaving || nextHideAds === hideAds) {
+      return;
+    }
+
+    const previousHideAds = hideAds;
+    setHideAds(nextHideAds);
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      await repository.setHideAds(nextHideAds);
+    } catch {
+      setHideAds(previousHideAds);
+      setError('save');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <section className="module-settings" aria-labelledby="ad-settings-heading">
+      <div className="module-settings__intro">
+        <p className="section-kicker">广告过滤</p>
+        <h2 id="ad-settings-heading">时间线广告</h2>
+        <p>直接隐藏带“广告”或“推广”标记的推文，不保留灰线或展开入口。</p>
+        <span className="session-note">默认开启，与“显示转贴”开关和转贴呈现方式无关。</span>
+      </div>
+
+      <label className="module-option">
+        <span className="module-option__copy">
+          <strong>隐藏广告</strong>
+          <span>应用于首页、列表和个人主页帖子时间线。</span>
+        </span>
+        <span className="module-switch">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={hideAds}
+            disabled={isLoading || isSaving}
+            aria-label="隐藏广告"
+            aria-describedby={error ? 'ad-settings-error' : undefined}
+            onChange={(event) => void updateHideAds(event.target.checked)}
+          />
+          <span className="module-switch__track" aria-hidden="true">
+            <span className="module-switch__thumb" />
+          </span>
+        </span>
+      </label>
+
+      {error ? (
+        <p id="ad-settings-error" className="module-settings__error" role="alert">
+          {error === 'load'
+            ? '广告设置读取失败，请刷新页面重试。'
+            : '广告设置保存失败，请重试。'}
         </p>
       ) : null}
     </section>
