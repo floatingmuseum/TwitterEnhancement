@@ -28,6 +28,77 @@
   margin-top: 10px;
 }
 
+:host([data-te-surface="tweet"]) {
+  display: inline-flex;
+  width: max-content;
+  max-width: 180px;
+  min-width: 0;
+  flex: 1 0 0;
+  align-self: center;
+  overflow: hidden;
+  margin: 0 0 0 6px;
+  vertical-align: middle;
+}
+
+:host([data-te-surface="tweet"]) .te-note-root {
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.te-tweet-note {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #0969a7;
+  background: var(--te-surface);
+  cursor: default;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:host([data-te-theme="dark"]) .te-tweet-note {
+  color: #71c5ff;
+}
+
+.te-tweet-note:hover {
+  background: var(--te-surface-hover);
+}
+
+.te-tweet-note:focus-visible {
+  outline: 2px solid var(--te-accent);
+  outline-offset: -2px;
+}
+
+.te-tweet-note__tooltip {
+  position: fixed;
+  inset: auto;
+  z-index: 2147483647;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 16px));
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--te-border);
+  border-radius: 8px;
+  color: var(--te-text);
+  background: var(--te-field);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 20%);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 19px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 *,
 *::before,
 *::after {

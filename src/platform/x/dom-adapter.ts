@@ -8,7 +8,7 @@ export interface XNoteSurfaceTarget {
   anchor: HTMLElement;
   handle: string;
   displayName: string | null;
-  surface: NoteSurface;
+  surface: NoteSurface | 'tweet';
 }
 
 const RESERVED_ROUTES = new Set([
@@ -35,6 +35,19 @@ const PROFILE_SUBROUTES = new Set([
 
 const EXACT_HANDLE_PATTERN = /^@([a-z0-9_]{1,15})$/i;
 const ANY_HANDLE_PATTERN = /(?:^|\s)@([a-z0-9_]{1,15})(?:\b|$)/i;
+const TWEET_IDENTITY_SELECTOR = '[data-testid="User-Name"], [data-testid="UserName"]';
+const TWEET_EXCLUDED_SELECTOR = [
+  '[data-testid="socialContext"]',
+  '[data-testid="tweetText"]',
+  '[data-testid="quoteTweet"]',
+  '[data-testid="card.wrapper"]',
+  '[data-testid="tweetPhoto"]',
+  '[data-testid="videoPlayer"]',
+  '[data-testid="HoverCard"]',
+  '[role="link"]:not(a)',
+  '[role="menu"]',
+  '[role="dialog"]',
+].join(', ');
 
 function safeNormalizeHandle(value: string): string | null {
   try {
@@ -177,8 +190,9 @@ function findProfileTarget(root: ParentNode, url: URL): XNoteSurfaceTarget | nul
     return null;
   }
 
-  const userName = scope.querySelector<HTMLElement>('[data-testid="UserName"]');
-  if (!userName || userName.closest('[data-testid="HoverCard"]')) {
+  const userName = Array.from(scope.querySelectorAll<HTMLElement>('[data-testid="UserName"]'))
+    .find((candidate) => !candidate.closest('article, [data-testid="HoverCard"]'));
+  if (!userName) {
     return null;
   }
 
@@ -226,11 +240,116 @@ function findHoverCardTargets(root: ParentNode): XNoteSurfaceTarget[] {
   return targets;
 }
 
+function belongsToTweetHeader(element: Element, article: HTMLElement): boolean {
+  if (element.closest('article') !== article) {
+    return false;
+  }
+
+  for (
+    let cursor: Element | null = element;
+    cursor && cursor !== article;
+    cursor = cursor.parentElement
+  ) {
+    if (
+      cursor.matches(TWEET_EXCLUDED_SELECTOR) ||
+      cursor.hasAttribute('hidden') ||
+      cursor.getAttribute('aria-hidden') === 'true'
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function tweetLinkHandle(link: HTMLAnchorElement, kind: 'profile' | 'status'): string | null {
+  try {
+    const url = new URL(link.getAttribute('href') ?? '', 'https://x.com');
+    if (url.protocol !== 'https:' || !['x.com', 'twitter.com'].includes(url.hostname)) {
+      return null;
+    }
+
+    const pattern = kind === 'profile'
+      ? /^\/([a-z0-9_]{1,15})\/?$/i
+      : /^\/([a-z0-9_]{1,15})\/status\/\d+\/?$/i;
+    const handle = pattern.exec(url.pathname)?.[1];
+    return handle && !RESERVED_ROUTES.has(handle.toLowerCase())
+      ? safeNormalizeHandle(handle)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function findTweetTargets(root: ParentNode): XNoteSurfaceTarget[] {
+  const targets: XNoteSurfaceTarget[] = [];
+
+  for (const article of root.querySelectorAll<HTMLElement>('article[data-testid="tweet"]')) {
+    if (article.parentElement?.closest('article')) {
+      continue;
+    }
+
+    const identity = Array.from(article.querySelectorAll<HTMLElement>(TWEET_IDENTITY_SELECTOR))
+      .find((candidate) => belongsToTweetHeader(candidate, article));
+    if (!identity) {
+      continue;
+    }
+
+    const profileLinks = Array.from(identity.querySelectorAll<HTMLAnchorElement>('a[href]'))
+      .filter((link) =>
+        belongsToTweetHeader(link, article) &&
+        link.closest(TWEET_IDENTITY_SELECTOR) === identity &&
+        tweetLinkHandle(link, 'profile') !== null,
+      );
+    const authorLink = profileLinks[0];
+    const handle = authorLink ? tweetLinkHandle(authorLink, 'profile') : null;
+    if (!handle) {
+      continue;
+    }
+
+    const nameLink = profileLinks.find((link) =>
+      tweetLinkHandle(link, 'profile') === handle && handleFromExactText(link) !== handle,
+    );
+    let displayName: string | null = null;
+    if (nameLink) {
+      try {
+        displayName = normalizeDisplayName(identityText(nameLink));
+      } catch {
+        // An unreadable display name does not invalidate the canonical author handle.
+      }
+    }
+
+    // A detail tweet can omit the inline time. Do not fall back to a quoted author.
+    for (const time of identity.querySelectorAll('time')) {
+      const anchor = time.closest('a[href]');
+      if (
+        !(anchor instanceof HTMLAnchorElement) ||
+        !identity.contains(anchor) ||
+        time.closest(TWEET_IDENTITY_SELECTOR) !== identity ||
+        !belongsToTweetHeader(time, article) ||
+        tweetLinkHandle(anchor, 'status') !== handle
+      ) {
+        continue;
+      }
+
+      targets.push({
+        anchor,
+        handle,
+        displayName,
+        surface: 'tweet',
+      });
+      break;
+    }
+  }
+
+  return targets;
+}
+
 export function findXNoteSurfaceTargets(
   root: ParentNode = document,
   url: URL = new URL(window.location.href),
 ): XNoteSurfaceTarget[] {
-  const targets = findHoverCardTargets(root);
+  const targets = [...findHoverCardTargets(root), ...findTweetTargets(root)];
   const profileTarget = findProfileTarget(root, url);
 
   if (profileTarget) {

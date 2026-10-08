@@ -13,12 +13,13 @@ import { createXVideoDownloadManager } from '../../src/platform/x/video-download
 import { interfaceLayoutPreferenceRepository } from '../../src/shared/storage/browser-interface-layout-preference-repository';
 import { interfaceModuleVisibilityRepository } from '../../src/shared/storage/browser-interface-module-visibility-repository';
 import { listRepostPreferenceRepository } from '../../src/shared/storage/browser-list-repost-preference-repository';
+import { userNoteRepository } from '../../src/shared/storage/browser-user-note-repository';
 
 export default defineContentScript({
   matches: ['https://x.com/*', 'https://twitter.com/*'],
   runAt: 'document_idle',
   main(ctx) {
-    const manager = createXSurfaceMountManager(mountXNoteUi);
+    const manager = createXSurfaceMountManager((target) => mountXNoteUi(target, userNoteRepository));
     const interfaceModuleManager = createXInterfaceModuleManager(
       interfaceModuleVisibilityRepository,
     );
@@ -68,6 +69,9 @@ export default defineContentScript({
     observer.observe(document.body, {
       childList: true,
       subtree: true,
+      attributes: true,
+      attributeFilter: ['href'],
+      characterData: true,
     });
 
     ctx.addEventListener(window, 'wxt:locationchange', scheduleScan);

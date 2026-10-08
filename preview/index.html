@@ -16,6 +16,29 @@
     </header>
 
     <main class="preview-grid">
+      <section class="preview-panel preview-panel--tweets">
+        <p class="preview-label">推文 · 已有备注显示在时间后，与下方编辑器同步</p>
+        <article class="x-card x-tweet" data-testid="tweet">
+          <header class="x-tweet-header">
+            <div data-testid="User-Name" class="x-tweet-identity">
+              <div class="x-tweet-name"><a href="https://x.com/alice">Alice Chen <span class="x-verified">✓</span></a></div>
+              <div class="x-tweet-meta"><div class="x-tweet-handle"><a href="https://x.com/alice">@alice</a></div><span>·</span><div class="x-tweet-time"><a href="https://x.com/alice/status/123"><time>32分钟</time></a></div></div>
+            </div>
+            <button class="x-tweet-more" type="button" aria-label="更多">···</button>
+          </header>
+          <p class="x-bio">有备注的人，直接在推文头部辨认。长备注保持单行，聚焦标签查看全文。</p>
+        </article>
+        <article class="x-card x-tweet x-tweet--narrow" data-testid="tweet">
+          <header class="x-tweet-header">
+            <div data-testid="User-Name" class="x-tweet-identity">
+              <div class="x-tweet-name"><a href="https://x.com/alice">Alice Chen</a></div>
+              <div class="x-tweet-meta"><div class="x-tweet-handle"><a href="https://x.com/alice">@alice</a></div><span>·</span><div class="x-tweet-time"><a href="https://x.com/alice/status/124"><time>1小时</time></a></div></div>
+            </div>
+            <button class="x-tweet-more" type="button" aria-label="更多">···</button>
+          </header>
+          <p class="x-bio">窄列示例：备注优先收缩。</p>
+        </article>
+      </section>
       <section class="preview-panel">
         <p class="preview-label">个人主页 · 3 行</p>
         <article class="x-card x-profile">

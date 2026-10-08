@@ -202,6 +202,82 @@ body[data-theme="light"] .x-avatar {
   font-size: 17px;
 }
 
+.preview-panel--tweets {
+  grid-column: 1 / -1;
+}
+
+.preview-panel {
+  min-width: 0;
+}
+
+.x-tweet {
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.x-tweet--narrow {
+  width: 360px;
+  max-width: 100%;
+}
+
+.x-tweet-header,
+.x-tweet-identity,
+.x-tweet-meta,
+.x-tweet-time {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.x-tweet-header {
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.x-tweet-identity {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+.x-tweet-name,
+.x-tweet-handle {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.x-tweet-name {
+  font-weight: 700;
+}
+
+.x-tweet-meta {
+  gap: 4px;
+  margin-left: 4px;
+  color: #71767b;
+}
+
+.x-tweet-time {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.x-tweet-header a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.x-tweet-more {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  color: #71767b;
+  background: transparent;
+  font-size: 20px;
+}
+
 @media (max-width: 760px) {
   .preview-toolbar {
     padding-inline: 16px;

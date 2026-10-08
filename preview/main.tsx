@@ -1,6 +1,8 @@
 import ReactDOM from 'react-dom/client';
 import noteStyles from '../entrypoints/twitter.content/style.css?inline';
 import { UserNote, type NoteSurface } from '../src/features/user-notes/UserNote';
+import { findXNoteSurfaceTargets } from '../src/platform/x/dom-adapter';
+import { mountXNoteUi } from '../src/platform/x/mount-note-ui';
 import type {
   Unsubscribe,
   UserNoteListener,
@@ -9,7 +11,9 @@ import type {
 } from '../src/features/user-notes/note-model';
 
 class PreviewNoteRepository implements UserNoteRepository {
-  private note: UserNoteV1 | null = null;
+  private note: UserNoteV1 | null = {
+    version: 1, handle: 'alice', text: '浏览器安全研究者', updatedAt: 1,
+  };
   private readonly listeners = new Set<UserNoteListener>();
 
   async get(): Promise<UserNoteV1 | null> {
@@ -47,6 +51,7 @@ class PreviewNoteRepository implements UserNoteRepository {
 
 const repository = new PreviewNoteRepository();
 const hosts: HTMLElement[] = [];
+const tweetMounts = findXNoteSurfaceTargets().map((target) => mountXNoteUi(target, repository));
 
 function mountPreview(id: string, surface: NoteSurface) {
   const host = document.getElementById(id);
@@ -72,8 +77,14 @@ function mountPreview(id: string, surface: NoteSurface) {
 }
 
 function applyTheme(theme: 'dark' | 'light') {
+  document.documentElement.style.colorScheme = theme;
   document.body.dataset.theme = theme;
-  for (const host of hosts) {
+  for (const mounted of tweetMounts) {
+    mounted.updateAppearance();
+  }
+  // The preview animates its background; use the selected theme directly
+  // rather than sampling an intermediate transition color.
+  for (const host of [...hosts, ...document.querySelectorAll<HTMLElement>('[data-twitter-enhancement-note]')]) {
     host.dataset.teTheme = theme;
   }
 }

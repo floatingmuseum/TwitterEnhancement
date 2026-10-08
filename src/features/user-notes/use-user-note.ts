@@ -22,11 +22,13 @@ export function useUserNote(
 
   useEffect(() => {
     let active = true;
+    let receivedUpdate = false;
     setNote(undefined);
     setLoadError(false);
 
     const unsubscribe = repository.subscribe(handle, (nextNote) => {
       if (active) {
+        receivedUpdate = true;
         setNote(nextNote);
         setLoadError(false);
       }
@@ -35,12 +37,12 @@ export function useUserNote(
     void repository
       .get(handle, displayName)
       .then((nextNote) => {
-        if (active) {
+        if (active && !receivedUpdate) {
           setNote(nextNote);
         }
       })
       .catch(() => {
-        if (active) {
+        if (active && !receivedUpdate) {
           setNote(null);
           setLoadError(true);
         }
