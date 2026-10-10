@@ -202,6 +202,44 @@ async function collapseDesktopMedia(
   return { manager, primary, repository };
 }
 
+function appendPhotoCarousel(
+  parent: HTMLElement,
+  paddingBottom = '66%',
+  nativeHeight = 324,
+) {
+  parent.insertAdjacentHTML('beforeend', `
+    <div id="photo-carousel" style="max-width: 95% !important">
+      <div id="carousel-padding" style="padding-bottom: ${paddingBottom}">
+        <nav role="navigation" style="position: absolute; inset: 0">
+          <button aria-label="Previous">Previous</button>
+          <div data-testid="ScrollSnap-SwipeableList">
+            <div data-testid="ScrollSnap-List" role="tablist" style="overflow-x: auto">
+              ${[1, 2, 3, 4].map((index) => `
+                <div role="presentation" style="flex-shrink: 0">
+                  <div style="aspect-ratio: 0.5625 / 1">
+                    <a href="/Alice/status/3/photo/${index}"><div data-testid="tweetPhoto"><img /></div></a>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          <button aria-label="Next">Next</button>
+        </nav>
+      </div>
+    </div>
+  `);
+  const target = requiredElement('#photo-carousel');
+  const spacer = requiredElement('#carousel-padding');
+  const list = requiredElement('#photo-carousel [data-testid="ScrollSnap-List"]');
+  const primary = requiredElement('[data-testid="primaryColumn"]');
+  mockMediaWidth(target);
+  const measure = vi.spyOn(spacer, 'getBoundingClientRect').mockImplementation(() => ({
+    ...rectWithWidth(492),
+    height: primary.style.width === '600px' ? nativeHeight : nativeHeight + 600,
+  }));
+  return { target, spacer, list, measure };
+}
+
 describe('X interface layout manager', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -538,6 +576,135 @@ describe('X interface layout manager', () => {
       manager.destroy();
     }
   });
+
+  it.each([
+    { quoted: true, padding: '66%', height: 324 },
+    { quoted: false, padding: 'calc(106.454% - 4.258px)', height: 598 },
+  ])('expands a photo carousel without enlarging its slides: %j', async ({ quoted, padding, height }) => {
+    const { manager } = await collapseDesktopMedia();
+    try {
+      const body = requiredElement('#tweet-body');
+      body.insertAdjacentHTML('beforeend', quoted
+        ? '<div id="carousel-body" role="link"><div data-testid="tweetText">Quoted tweet</div></div>'
+        : '<div id="carousel-body"><div data-testid="tweetText">Detail tweet</div></div>');
+      const { target, spacer, list, measure } = appendPhotoCarousel(requiredElement('#carousel-body'), padding, height);
+      const links = Array.from(list.querySelectorAll('a'));
+
+      manager.sync();
+      manager.sync();
+
+      expect(target.style.maxWidth).toBe('none');
+      expect(spacer).toHaveStyle({ paddingBottom: `calc(min(${padding}, ${height}px))` });
+      expect(measure).toHaveBeenCalledTimes(1);
+      expect(Array.from(list.querySelectorAll('a'))).toEqual(links);
+      expect(list.style.overflowX).toBe('auto');
+      expect(requiredElement('#carousel-body').style.maxWidth).toBe('');
+      expect(requiredElement('#single-media').style.maxWidth).toBe('min(100%, 518px)');
+      expect(requiredElement('#multi-media').style.maxWidth).toBe('min(100%, 518px)');
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  it.each([
+    { leftNavigationExpanded: false, rightSidebarVisible: false },
+    { leftNavigationExpanded: false, rightSidebarVisible: true },
+    { leftNavigationExpanded: true, rightSidebarVisible: false },
+  ])('expands initially present photo carousels for either collapsed sidebar: %j', async (preference) => {
+    renderDesktopTweetMedia();
+    const { target, spacer } = appendPhotoCarousel(requiredElement('#tweet-body'));
+    const storage = new FakeExtensionLocalStorage();
+    storage.values.set(INTERFACE_LAYOUT_STORAGE_KEYS.leftNavigationExpanded, preference.leftNavigationExpanded);
+    storage.values.set(INTERFACE_LAYOUT_STORAGE_KEYS.rightSidebarVisible, preference.rightSidebarVisible);
+    const manager = createXInterfaceLayoutManager(new LocalInterfaceLayoutPreferenceRepository(storage));
+    try {
+      await vi.waitFor(() => expect(target.style.maxWidth).toBe('none'));
+      expect(spacer).toHaveStyle({ paddingBottom: 'calc(min(66%, 324px))' });
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  it.each(['single-slide', 'mixed-video', 'unknown-spacer'])(
+    'keeps the native media limit when a carousel is unsupported: %s',
+    async (variant) => {
+      const { manager } = await collapseDesktopMedia();
+      try {
+        const { target, spacer, list } = appendPhotoCarousel(requiredElement('#tweet-body'));
+        if (variant === 'single-slide') {
+          Array.from(list.children).slice(1).forEach((slide) => slide.remove());
+        } else if (variant === 'mixed-video') {
+          list.firstElementChild?.insertAdjacentHTML('beforeend', '<div data-testid="videoPlayer"><video></video></div>');
+        } else {
+          spacer.style.removeProperty('padding-bottom');
+        }
+        manager.sync();
+        expect(target.style.maxWidth).toBe('min(100%, 518px)');
+        expect(spacer.style.getPropertyPriority('padding-bottom')).toBe('');
+      } finally {
+        manager.destroy();
+      }
+    },
+  );
+
+  it('retries an unmeasurable carousel and restores its styles when both sidebars reopen', async () => {
+    const { manager, repository } = await collapseDesktopMedia();
+    const { target, spacer, measure } = appendPhotoCarousel(requiredElement('#tweet-body'));
+    spacer.style.setProperty('padding-bottom', '66%', 'important');
+    spacer.setAttribute('data-twitter-enhancement-layout', 'original-spacer');
+    const originalTarget = target.style.cssText;
+    const originalSpacer = spacer.style.cssText;
+    measure.mockReturnValueOnce({ ...rectWithWidth(0), height: 0 });
+    try {
+      manager.sync();
+      expect(target.style.maxWidth).toBe('min(100%, 518px)');
+      expect(spacer.style.paddingBottom).toBe('66%');
+      manager.sync();
+      expect(target.style.maxWidth).toBe('none');
+      expect(spacer).toHaveStyle({ paddingBottom: 'calc(min(66%, 324px))' });
+
+      await repository.setPreference('leftNavigationExpanded', true);
+      expect(target.style.maxWidth).toBe('none');
+      await repository.setPreference('rightSidebarVisible', true);
+      expect(target.style.cssText).toBe(originalTarget);
+      expect(spacer.style.cssText).toBe(originalSpacer);
+      expect(spacer.getAttribute('data-twitter-enhancement-layout')).toBe('original-spacer');
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  it.each(['read-view', 'dialog', 'detached', 'single-slide', 'sidebar-removed', 'destroy'])(
+    'restores expanded carousel styles after its context changes: %s',
+    async (change) => {
+      const { manager } = await collapseDesktopMedia();
+      const { target, spacer, list } = appendPhotoCarousel(requiredElement('#tweet-body'));
+      try {
+        manager.sync();
+        expect(target.style.maxWidth).toBe('none');
+        if (change === 'read-view' || change === 'dialog') {
+          const wrapper = document.createElement(change === 'read-view' ? 'article' : 'div');
+          wrapper.setAttribute(change === 'read-view' ? 'data-testid' : 'role', change === 'read-view' ? 'twitterArticleReadView' : 'dialog');
+          requiredElement('#tweet-body').append(wrapper);
+          wrapper.append(target);
+        } else if (change === 'detached') {
+          target.remove();
+        } else if (change === 'single-slide') {
+          Array.from(list.children).slice(1).forEach((slide) => slide.remove());
+        } else if (change === 'sidebar-removed') {
+          requiredElement('[data-testid="sidebarColumn"]').remove();
+        } else {
+          manager.destroy();
+        }
+        manager.sync();
+        expect(spacer.style.paddingBottom).toBe('66%');
+        expect(spacer).not.toHaveAttribute('data-twitter-enhancement-layout');
+        expect(target.style.maxWidth).toBe(change === 'single-slide' ? 'min(100%, 518px)' : '95%');
+      } finally {
+        manager.destroy();
+      }
+    },
+  );
 
   it('restores original media styles and markers when both side areas reopen', async () => {
     const { manager, repository } = await collapseDesktopMedia();

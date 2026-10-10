@@ -20,6 +20,11 @@ interface NormalDesktopLayoutMeasurement {
   viewportWidth: number;
 }
 
+interface PhotoCarouselSize {
+  height: number;
+  paddingBottom: string;
+}
+
 const LAYOUT_MARKER = 'data-twitter-enhancement-layout';
 const LEFT_CONTROL_HOST = 'data-twitter-enhancement-left-layout-control';
 const RIGHT_CONTROL_HOST = 'data-twitter-enhancement-right-layout-control';
@@ -91,6 +96,29 @@ function findTweetMediaTargets(primary: HTMLElement): HTMLElement[] {
     targets.add(target);
   }
   return [...targets];
+}
+
+function findPhotoCarouselSpacer(target: HTMLElement): HTMLElement | null {
+  const lists = target.querySelectorAll<HTMLElement>('[data-testid="ScrollSnap-List"]');
+  const list = lists.item(0);
+  if (
+    lists.length !== 1 ||
+    !list ||
+    Array.from(list.children).filter((slide) => slide.querySelector('[data-testid="tweetPhoto"]')).length < 2 ||
+    list.querySelector('[data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid="playButton"], video')
+  ) {
+    return null;
+  }
+  // X sizes its horizontal photo strips with a percentage-padding spacer.
+  // Keep that native height while allowing the scrollport to fill the column.
+  let spacer = list.parentElement;
+  while (spacer && target.contains(spacer)) {
+    if (spacer.style.paddingBottom.includes('%')) {
+      return spacer;
+    }
+    spacer = spacer.parentElement;
+  }
+  return null;
 }
 
 function findTimelineContentTargets(primary: HTMLElement): HTMLElement[] {
@@ -223,6 +251,7 @@ export function createXInterfaceLayoutManager(
   let normalDesktopLayout: NormalDesktopLayoutMeasurement | null = null;
   let normalPrimaryWidth: number | null = null;
   let mediaWidths = new WeakMap<HTMLElement, number>();
+  let carouselSizes = new WeakMap<HTMLElement, PhotoCarouselSize>();
   let destroyed = false;
   let preferenceRevision = 0;
 
@@ -611,6 +640,7 @@ export function createXInterfaceLayoutManager(
       restoreAll(rightStyledElements);
       normalPrimaryWidth = null;
       mediaWidths = new WeakMap();
+      carouselSizes = new WeakMap();
       rightHost = removeHost(rightHost);
       return;
     }
@@ -628,10 +658,17 @@ export function createXInterfaceLayoutManager(
         const width = primary.getBoundingClientRect().width;
         normalPrimaryWidth = width > 0 && Number.isFinite(width) ? width : null;
         mediaWidths = new WeakMap();
+        carouselSizes = new WeakMap();
       }
       const mediaTargets = findTweetMediaTargets(primary);
+      const carouselSpacers = new Map(
+        mediaTargets.map((target) => [target, findPhotoCarouselSpacer(target)]),
+      );
       const unmeasuredTargets = mediaTargets.filter(
-        (target) => !mediaWidths.has(target),
+        (target) => {
+          const spacer = carouselSpacers.get(target);
+          return !mediaWidths.has(target) || (spacer && !carouselSizes.has(spacer));
+        },
       );
       if (normalPrimaryWidth !== null && unmeasuredTargets.length > 0) {
         // Lazy-loaded tweets arrive after the column has expanded. Measure all
@@ -651,6 +688,16 @@ export function createXInterfaceLayoutManager(
             if (mediaWidth > 0 && Number.isFinite(mediaWidth)) {
               mediaWidths.set(target, mediaWidth);
             }
+            const spacer = carouselSpacers.get(target);
+            if (spacer && !carouselSizes.has(spacer)) {
+              const height = spacer.getBoundingClientRect().height;
+              if (height > 0 && Number.isFinite(height)) {
+                carouselSizes.set(spacer, {
+                  height,
+                  paddingBottom: spacer.style.paddingBottom,
+                });
+              }
+            }
           }
         } finally {
           if (originalStyle === null) {
@@ -661,6 +708,22 @@ export function createXInterfaceLayoutManager(
         }
       }
       for (const target of mediaTargets) {
+        const spacer = carouselSpacers.get(target);
+        const carouselSize = spacer ? carouselSizes.get(spacer) : undefined;
+        if (spacer && carouselSize) {
+          current.add(target);
+          applyStyles(rightStyledElements, target, 'tweet-photo-carousel', {
+            'box-sizing': 'border-box',
+            'max-width': 'none',
+          });
+          current.add(spacer);
+          applyStyles(rightStyledElements, spacer, 'tweet-photo-carousel-height', {
+            // Retain the percentage for narrower layouts, but cap growth at
+            // the height measured with the native column width.
+            'padding-bottom': `calc(min(${carouselSize.paddingBottom}, ${carouselSize.height}px))`,
+          });
+          continue;
+        }
         const width = mediaWidths.get(target);
         if (width !== undefined) {
           current.add(target);
@@ -707,6 +770,7 @@ export function createXInterfaceLayoutManager(
     } else {
       normalPrimaryWidth = null;
       mediaWidths = new WeakMap();
+      carouselSizes = new WeakMap();
     }
     if (!preference.rightSidebarVisible) {
       current.add(sidebar);
