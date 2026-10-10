@@ -1,9 +1,11 @@
 import { findXNoteSurfaceTargets } from '../../src/platform/x/dom-adapter';
+import { createXImageDownloadManager } from '../../src/platform/x/image-download-manager';
 import { createXInterfaceLayoutManager } from '../../src/platform/x/interface-layout-manager';
 import { createXInterfaceModuleManager } from '../../src/platform/x/interface-module-manager';
 import { createXRepostTimelineManager } from '../../src/platform/x/list-repost-manager';
 import { createXMediaNavigationManager } from '../../src/platform/x/media-navigation-manager';
 import { mountXRepostTimelineUi } from '../../src/platform/x/mount-list-repost-ui';
+import { mountXImageDownloadUi } from '../../src/platform/x/mount-image-download-ui';
 import { mountXMediaNavigationUi } from '../../src/platform/x/mount-media-navigation-ui';
 import { mountXNoteUi } from '../../src/platform/x/mount-note-ui';
 import { mountXVideoDownloadUi } from '../../src/platform/x/mount-video-download-ui';
@@ -33,6 +35,7 @@ export default defineContentScript({
     const mediaNavigationManager = createXMediaNavigationManager(
       mountXMediaNavigationUi,
     );
+    const imageDownloadManager = createXImageDownloadManager(mountXImageDownloadUi);
     const videoDownloadManager = createXVideoDownloadManager(
       mountXVideoDownloadUi,
       (target) => [
@@ -57,6 +60,7 @@ export default defineContentScript({
       repostTimelineManager.sync();
       mediaNavigationManager.sync();
       videoDownloadManager.sync();
+      imageDownloadManager.sync();
     };
 
     const scheduleScan = () => {
@@ -70,12 +74,22 @@ export default defineContentScript({
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['href'],
+      attributeFilter: ['href', 'src', 'srcset'],
       characterData: true,
     });
 
     ctx.addEventListener(window, 'wxt:locationchange', scheduleScan);
     ctx.addEventListener(window, 'resize', scheduleScan);
+    ctx.addEventListener(
+      document,
+      'load',
+      (event) => {
+        if (event.target instanceof HTMLImageElement) {
+          scheduleScan();
+        }
+      },
+      true,
+    );
 
     const cleanup = () => {
       observer.disconnect();
@@ -88,9 +102,11 @@ export default defineContentScript({
       repostTimelineManager.destroy();
       mediaNavigationManager.destroy();
       videoDownloadManager.destroy();
+      imageDownloadManager.destroy();
     };
 
     window.addEventListener('pagehide', cleanup, { once: true });
+    ctx.onInvalidated(cleanup);
     scheduleScan();
   },
 });

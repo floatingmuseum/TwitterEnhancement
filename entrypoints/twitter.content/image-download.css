@@ -1,0 +1,68 @@
+:host {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: calc(100% - 16px);
+  color: #fff;
+  font: 12px/1.4 system-ui, sans-serif;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+:host([data-hovered]),
+:host(:focus-within),
+:host([data-state="busy"]),
+:host([data-state="success"]),
+:host([data-state="error"]) {
+  opacity: 1;
+}
+
+.te-image-download {
+  display: grid;
+  place-items: center;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 8px;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 50%;
+  background: rgb(15 20 25 / 82%);
+  color: #fff;
+  cursor: pointer;
+  pointer-events: none;
+}
+
+:host([data-hovered]) .te-image-download,
+:host(:focus-within) .te-image-download,
+:host(:not([data-state="idle"])) .te-image-download {
+  pointer-events: auto;
+}
+
+.te-image-download:hover { background: #0f1419; }
+.te-image-download:focus-visible { outline: 3px solid #1d9bf0; outline-offset: 2px; }
+.te-image-download[aria-disabled="true"] { cursor: progress; }
+.te-image-download svg { width: 18px; height: 18px; fill: currentColor; }
+
+.te-image-download__status {
+  margin-top: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgb(15 20 25 / 92%);
+  overflow-wrap: anywhere;
+}
+
+.te-image-download__status:empty { display: none; }
+:host([data-state="error"]) .te-image-download { border-color: #ffb4ab; }
+
+@media (hover: none) {
+  :host { opacity: 1; }
+  .te-image-download { pointer-events: auto; min-width: 44px; min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host { transition: none; }
+}

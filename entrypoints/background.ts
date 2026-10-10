@@ -1,8 +1,6 @@
 import { browser } from 'wxt/browser';
-import {
-  isDownloadTwitterVideoMessage,
-  type DownloadTwitterVideoResponse,
-} from '../src/features/video-download/download-message';
+import { isDownloadTwitterImageMessage } from '../src/features/image-download/download-message';
+import { isDownloadTwitterVideoMessage } from '../src/features/video-download/download-message';
 
 export default defineBackground(() => {
   browser.action.onClicked.addListener(() => {
@@ -10,23 +8,28 @@ export default defineBackground(() => {
   });
 
   browser.runtime.onMessage.addListener((message: unknown) => {
-    if (!isDownloadTwitterVideoMessage(message)) {
+    if (
+      !isDownloadTwitterVideoMessage(message) &&
+      !isDownloadTwitterImageMessage(message)
+    ) {
       return undefined;
     }
 
-    return browser.downloads
-      .download({
-        url: message.url,
-        filename: message.filename,
-        conflictAction: 'uniquify',
-        saveAs: false,
-      })
-      .then((): DownloadTwitterVideoResponse => ({ ok: true }))
-      .catch(
-        (error: unknown): DownloadTwitterVideoResponse => ({
+    return (async () => {
+      try {
+        await browser.downloads.download({
+          url: message.url,
+          filename: message.filename,
+          conflictAction: 'uniquify',
+          saveAs: false,
+        });
+        return { ok: true };
+      } catch (error) {
+        return {
           ok: false,
           error: error instanceof Error ? error.message : 'Download failed',
-        }),
-      );
+        };
+      }
+    })();
   });
 });
