@@ -1,4 +1,9 @@
 import {
+  ensureExternalVideoDataStore,
+  extractExternalVideoCards,
+  publishExternalVideoCards,
+} from '../src/platform/x/external-video-data-bridge';
+import {
   captureTwitterVideoUrl,
   ensureTwitterVideoDataStore,
   extractTwitterVideoVariants,
@@ -11,8 +16,10 @@ export default defineContentScript({
   world: 'MAIN',
   main() {
     ensureTwitterVideoDataStore(document);
+    ensureExternalVideoDataStore(document);
 
     const capturePayload = (payload: unknown) => {
+      publishExternalVideoCards(document, extractExternalVideoCards(payload));
       publishTwitterVideoVariants(
         document,
         extractTwitterVideoVariants(payload),

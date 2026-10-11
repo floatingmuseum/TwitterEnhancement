@@ -1,4 +1,6 @@
 import { findXNoteSurfaceTargets } from '../../src/platform/x/dom-adapter';
+import { EXTERNAL_VIDEO_DATA_EVENT } from '../../src/platform/x/external-video-data-bridge';
+import { createXExternalVideoManager } from '../../src/platform/x/external-video-manager';
 import { createXImageDownloadManager } from '../../src/platform/x/image-download-manager';
 import { createXInterfaceLayoutManager } from '../../src/platform/x/interface-layout-manager';
 import { createXInterfaceModuleManager } from '../../src/platform/x/interface-module-manager';
@@ -6,6 +8,7 @@ import { createXRepostTimelineManager } from '../../src/platform/x/list-repost-m
 import { createXMediaNavigationManager } from '../../src/platform/x/media-navigation-manager';
 import { mountXRepostTimelineUi } from '../../src/platform/x/mount-list-repost-ui';
 import { mountXImageDownloadUi } from '../../src/platform/x/mount-image-download-ui';
+import { mountXExternalVideoUi } from '../../src/platform/x/mount-external-video-ui';
 import { mountXMediaNavigationUi } from '../../src/platform/x/mount-media-navigation-ui';
 import { mountXNoteUi } from '../../src/platform/x/mount-note-ui';
 import { mountXVideoDownloadUi } from '../../src/platform/x/mount-video-download-ui';
@@ -36,6 +39,7 @@ export default defineContentScript({
       mountXMediaNavigationUi,
     );
     const imageDownloadManager = createXImageDownloadManager(mountXImageDownloadUi);
+    const externalVideoManager = createXExternalVideoManager(mountXExternalVideoUi);
     const videoDownloadManager = createXVideoDownloadManager(
       mountXVideoDownloadUi,
       (target) => [
@@ -61,6 +65,7 @@ export default defineContentScript({
       mediaNavigationManager.sync();
       videoDownloadManager.sync();
       imageDownloadManager.sync();
+      externalVideoManager.sync();
     };
 
     const scheduleScan = () => {
@@ -74,17 +79,18 @@ export default defineContentScript({
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['href', 'src', 'srcset'],
+      attributeFilter: ['href', 'src', 'srcset', 'title', 'data-expanded-url'],
       characterData: true,
     });
 
     ctx.addEventListener(window, 'wxt:locationchange', scheduleScan);
     ctx.addEventListener(window, 'resize', scheduleScan);
+    ctx.addEventListener(document, EXTERNAL_VIDEO_DATA_EVENT, scheduleScan);
     ctx.addEventListener(
       document,
       'load',
       (event) => {
-        if (event.target instanceof HTMLImageElement) {
+        if (event.target instanceof HTMLImageElement || event.target instanceof HTMLIFrameElement) {
           scheduleScan();
         }
       },
@@ -103,6 +109,7 @@ export default defineContentScript({
       mediaNavigationManager.destroy();
       videoDownloadManager.destroy();
       imageDownloadManager.destroy();
+      externalVideoManager.destroy();
     };
 
     window.addEventListener('pagehide', cleanup, { once: true });
