@@ -9,6 +9,8 @@ export interface XNoteSurfaceTarget {
   handle: string;
   displayName: string | null;
   surface: NoteSurface | 'tweet';
+  /** A compact author row; otherwise tweet notes use the whole identity block. */
+  inlineContainer?: HTMLElement;
 }
 
 const RESERVED_ROUTES = new Set([
@@ -36,18 +38,18 @@ const PROFILE_SUBROUTES = new Set([
 const EXACT_HANDLE_PATTERN = /^@([a-z0-9_]{1,15})$/i;
 const ANY_HANDLE_PATTERN = /(?:^|\s)@([a-z0-9_]{1,15})(?:\b|$)/i;
 const TWEET_IDENTITY_SELECTOR = '[data-testid="User-Name"], [data-testid="UserName"]';
-const TWEET_EXCLUDED_SELECTOR = [
+const QUOTED_TWEET_SELECTOR = '[data-testid="quoteTweet"], [role="link"]:not(a)';
+const TWEET_CONTENT_EXCLUDED_SELECTOR = [
   '[data-testid="socialContext"]',
   '[data-testid="tweetText"]',
-  '[data-testid="quoteTweet"]',
   '[data-testid="card.wrapper"]',
   '[data-testid="tweetPhoto"]',
   '[data-testid="videoPlayer"]',
   '[data-testid="HoverCard"]',
-  '[role="link"]:not(a)',
   '[role="menu"]',
   '[role="dialog"]',
 ].join(', ');
+const TWEET_EXCLUDED_SELECTOR = `${TWEET_CONTENT_EXCLUDED_SELECTOR}, ${QUOTED_TWEET_SELECTOR}`;
 
 function safeNormalizeHandle(value: string): string | null {
   try {
@@ -240,14 +242,14 @@ function findHoverCardTargets(root: ParentNode): XNoteSurfaceTarget[] {
   return targets;
 }
 
-function belongsToTweetHeader(element: Element, article: HTMLElement): boolean {
-  if (element.closest('article') !== article) {
+function belongsToTweetHeader(element: Element, scope: HTMLElement): boolean {
+  if (element.closest('article') !== scope.closest('article')) {
     return false;
   }
 
   for (
     let cursor: Element | null = element;
-    cursor && cursor !== article;
+    cursor && cursor !== scope;
     cursor = cursor.parentElement
   ) {
     if (
@@ -281,64 +283,134 @@ function tweetLinkHandle(link: HTMLAnchorElement, kind: 'profile' | 'status'): s
   }
 }
 
-function findTweetTargets(root: ParentNode): XNoteSurfaceTarget[] {
-  const targets: XNoteSurfaceTarget[] = [];
+function hasDetailPermalink(article: HTMLElement, handle: string, url: URL): boolean {
+  if (!/^\/[a-z0-9_]{1,15}\/status\/\d+\/?$/i.test(url.pathname)) {
+    return false;
+  }
 
+  const detailPath = url.pathname.replace(/\/$/, '').toLowerCase();
+  return Array.from(article.querySelectorAll('time')).some((time) => {
+    const link = time.closest('a[href]');
+    return link instanceof HTMLAnchorElement &&
+      !time.closest(TWEET_IDENTITY_SELECTOR) &&
+      belongsToTweetHeader(time, article) &&
+      tweetLinkHandle(link, 'status') === handle &&
+      new URL(link.getAttribute('href') ?? '', 'https://x.com').pathname.replace(/\/$/, '').toLowerCase() === detailPath;
+  });
+}
+
+function findTweetIdentityTarget(
+  scope: HTMLElement,
+  url: URL,
+  quoted: boolean,
+): XNoteSurfaceTarget | null {
+  const identity = Array.from(scope.querySelectorAll<HTMLElement>(TWEET_IDENTITY_SELECTOR))
+    .find((candidate) => belongsToTweetHeader(candidate, scope));
+  if (!identity) {
+    return null;
+  }
+
+  const belongsToIdentity = (element: Element) =>
+    element.closest(TWEET_IDENTITY_SELECTOR) === identity && belongsToTweetHeader(element, scope);
+  const links = Array.from(identity.querySelectorAll<HTMLAnchorElement>('a[href]')).filter(belongsToIdentity);
+  const profileLinks = links.filter((link) => tweetLinkHandle(link, 'profile') !== null);
+  const handleElements = Array.from(identity.querySelectorAll<HTMLElement>('a, span, div'))
+    .filter((element) => belongsToIdentity(element) && handleFromExactText(element) !== null);
+  const textHandles = new Set(handleElements.map(handleFromExactText));
+  const authorLink = profileLinks[0];
+  const textHandleElement = handleElements[0];
+  if (!authorLink && links.some((link) => !link.querySelector('time'))) {
+    return null;
+  }
+  // X renders quoted authors as plain text inside a clickable card.
+  // Only accept one exact @handle from that card's own identity block.
+  const handle = authorLink
+    ? tweetLinkHandle(authorLink, 'profile')
+    : quoted && textHandles.size === 1 && textHandleElement ? handleFromExactText(textHandleElement) : null;
+  if (!handle ||
+    profileLinks.some((link) => tweetLinkHandle(link, 'profile') !== handle) ||
+    (textHandles.size > 0 && (textHandles.size !== 1 || !textHandles.has(handle)))) {
+    return null;
+  }
+
+  const nameLink = profileLinks.find((link) => handleFromExactText(link) !== handle);
+  let displayName: string | null = null;
+  if (nameLink) {
+    try {
+      displayName = normalizeDisplayName(identityText(nameLink));
+    } catch {
+      // An unreadable display name does not invalidate the canonical author handle.
+    }
+  }
+
+  const times = Array.from(identity.querySelectorAll('time')).filter(belongsToIdentity);
+  for (const time of times) {
+    const link = time.closest('a[href]');
+    if (link && (!(link instanceof HTMLAnchorElement) || !identity.contains(link) || tweetLinkHandle(link, 'status') !== handle)) {
+      continue;
+    }
+    if (!link && !quoted) {
+      continue;
+    }
+    return {
+      anchor: link instanceof HTMLAnchorElement ? link : time,
+      handle,
+      displayName,
+      surface: 'tweet',
+      ...(quoted ? { inlineContainer: identity } : {}),
+    };
+  }
+
+  // Only the main detail tweet may fall back to its handle. Require its own
+  // footer permalink, so an incomplete reply or a quoted timestamp cannot qualify.
+  const handleElement = profileLinks.find((link) => handleFromExactText(link) === handle) ?? handleElements[0];
+  if (quoted || times.length > 0 || !handleElement || !hasDetailPermalink(scope, handle, url)) {
+    return null;
+  }
+  let handleRow = handleElement;
+  while (handleRow.parentElement && handleRow.parentElement !== identity) {
+    handleRow = handleRow.parentElement;
+  }
+  return {
+    anchor: handleElement,
+    handle,
+    displayName,
+    surface: 'tweet',
+    inlineContainer: handleRow === handleElement ? identity : handleRow,
+  };
+}
+
+function isQuotedTweetScope(scope: HTMLElement, article: HTMLElement): boolean {
+  if (scope.closest('article') !== article) {
+    return false;
+  }
+  for (let cursor: Element | null = scope; cursor && cursor !== article; cursor = cursor.parentElement) {
+    if (cursor.matches(TWEET_CONTENT_EXCLUDED_SELECTOR) ||
+      cursor.hasAttribute('hidden') || cursor.getAttribute('aria-hidden') === 'true') {
+      return false;
+    }
+  }
+  return true;
+}
+
+function findTweetTargets(root: ParentNode, url: URL): XNoteSurfaceTarget[] {
+  const targets: XNoteSurfaceTarget[] = [];
   for (const article of root.querySelectorAll<HTMLElement>('article[data-testid="tweet"]')) {
     if (article.parentElement?.closest('article')) {
       continue;
     }
-
-    const identity = Array.from(article.querySelectorAll<HTMLElement>(TWEET_IDENTITY_SELECTOR))
-      .find((candidate) => belongsToTweetHeader(candidate, article));
-    if (!identity) {
-      continue;
+    const mainTarget = findTweetIdentityTarget(article, url, false);
+    if (mainTarget) {
+      targets.push(mainTarget);
     }
-
-    const profileLinks = Array.from(identity.querySelectorAll<HTMLAnchorElement>('a[href]'))
-      .filter((link) =>
-        belongsToTweetHeader(link, article) &&
-        link.closest(TWEET_IDENTITY_SELECTOR) === identity &&
-        tweetLinkHandle(link, 'profile') !== null,
-      );
-    const authorLink = profileLinks[0];
-    const handle = authorLink ? tweetLinkHandle(authorLink, 'profile') : null;
-    if (!handle) {
-      continue;
-    }
-
-    const nameLink = profileLinks.find((link) =>
-      tweetLinkHandle(link, 'profile') === handle && handleFromExactText(link) !== handle,
-    );
-    let displayName: string | null = null;
-    if (nameLink) {
-      try {
-        displayName = normalizeDisplayName(identityText(nameLink));
-      } catch {
-        // An unreadable display name does not invalidate the canonical author handle.
-      }
-    }
-
-    // A detail tweet can omit the inline time. Do not fall back to a quoted author.
-    for (const time of identity.querySelectorAll('time')) {
-      const anchor = time.closest('a[href]');
-      if (
-        !(anchor instanceof HTMLAnchorElement) ||
-        !identity.contains(anchor) ||
-        time.closest(TWEET_IDENTITY_SELECTOR) !== identity ||
-        !belongsToTweetHeader(time, article) ||
-        tweetLinkHandle(anchor, 'status') !== handle
-      ) {
+    for (const quote of article.querySelectorAll<HTMLElement>(QUOTED_TWEET_SELECTOR)) {
+      if (!isQuotedTweetScope(quote, article)) {
         continue;
       }
-
-      targets.push({
-        anchor,
-        handle,
-        displayName,
-        surface: 'tweet',
-      });
-      break;
+      const quotedTarget = findTweetIdentityTarget(quote, url, true);
+      if (quotedTarget) {
+        targets.push(quotedTarget);
+      }
     }
   }
 
@@ -349,7 +421,7 @@ export function findXNoteSurfaceTargets(
   root: ParentNode = document,
   url: URL = new URL(window.location.href),
 ): XNoteSurfaceTarget[] {
-  const targets = [...findHoverCardTargets(root), ...findTweetTargets(root)];
+  const targets = [...findHoverCardTargets(root), ...findTweetTargets(root, url)];
   const profileTarget = findProfileTarget(root, url);
 
   if (profileTarget) {

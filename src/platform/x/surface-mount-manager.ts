@@ -31,7 +31,8 @@ export function createXSurfaceMountManager(mount: MountXNoteSurface): XSurfaceMo
         existing &&
         existing.target.handle === target.handle &&
         existing.target.displayName === target.displayName &&
-        existing.target.surface === target.surface
+        existing.target.surface === target.surface &&
+        existing.target.inlineContainer === target.inlineContainer
       ) {
         existing.mounted.updateAppearance();
         continue;

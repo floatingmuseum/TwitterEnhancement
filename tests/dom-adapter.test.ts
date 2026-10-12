@@ -122,7 +122,7 @@ describe('X DOM adapter', () => {
         <div data-testid="quoteTweet">
           <div data-testid="User-Name">
             <a href="/Quoted">Quoted</a>
-            <a href="/Quoted/status/789"><time>1 小时</time></a>
+            <a id="quoted-time" href="/Quoted/status/789"><time>1 小时</time></a>
           </div>
         </div>
         <div role="group"><a href="/Other/status/999">更多</a></div>
@@ -130,12 +130,17 @@ describe('X DOM adapter', () => {
     `;
 
     const targets = findXNoteSurfaceTargets(document, new URL(route));
-    expect(targets).toHaveLength(1);
+    expect(targets).toHaveLength(2);
     expect(targets[0]).toMatchObject({
       handle: 'alice',
       displayName: 'Alice🌙',
       surface: 'tweet',
       anchor: document.getElementById('author-time'),
+    });
+    expect(targets[1]).toMatchObject({
+      handle: 'quoted',
+      surface: 'tweet',
+      anchor: document.getElementById('quoted-time'),
     });
   });
 
@@ -188,10 +193,10 @@ describe('X DOM adapter', () => {
       expect(findXNoteSurfaceTargets(document, new URL('https://x.com/home'))).toEqual([]);
     });
 
-  it('skips a detail author without inline time instead of using the quoted author', () => {
+  it('anchors a detail author without inline time to its own handle', () => {
     document.body.innerHTML = `
       <article data-testid="tweet">
-        <div data-testid="User-Name"><a href="/Alice">Alice</a><span>@Alice</span></div>
+        <div data-testid="User-Name"><a href="/Alice">Alice</a><span id="detail-handle">@Alice</span></div>
         <div data-testid="tweetText">正文</div>
         <div data-testid="User-Name">
           <a href="/Quoted">Quoted</a>
@@ -202,25 +207,109 @@ describe('X DOM adapter', () => {
     `;
 
     expect(findXNoteSurfaceTargets(document, new URL('https://x.com/Alice/status/123')))
-      .toEqual([]);
+      .toEqual([expect.objectContaining({
+        handle: 'alice',
+        surface: 'tweet',
+        anchor: document.getElementById('detail-handle'),
+      })]);
+  });
+
+  it.each(['data-testid="quoteTweet"', 'role="link" tabindex="0"'])(
+    'finds a linkless quoted identity inside %s independently of the detail author', (attributes) => {
+      document.body.innerHTML = `
+        <article data-testid="tweet">
+          <div data-testid="User-Name">
+            <div><a href="/dotey">宝玉</a></div>
+            <div id="detail-row"><div><a id="detail-handle" href="/dotey">@dotey</a></div></div>
+          </div>
+          <p data-testid="tweetText">REA 背后的大佬，推荐关注 <a href="/Someone">@Someone</a></p>
+          <div ${attributes}>
+            <div data-testid="User-Name">
+              <div><div><span>morluto</span></div></div>
+              <div><div><div tabindex="-1"><span>@morluto</span></div></div>
+                <span aria-hidden="true">·</span>
+                <div><div aria-label="12 小时前"><time id="quote-time" datetime="2026-10-11T19:54:32.000Z">12小时</time></div></div>
+              </div>
+            </div>
+            <p data-testid="tweetText">正文里提到 @Someone</p>
+          </div>
+          <a href="/dotey/status/123"><time>下午3:33</time></a>
+        </article>
+      `;
+
+      const targets = findXNoteSurfaceTargets(document, new URL('https://x.com/dotey/status/123'));
+      expect(targets).toHaveLength(2);
+      expect(targets[0]).toMatchObject({
+        handle: 'dotey',
+        anchor: document.getElementById('detail-handle'),
+        inlineContainer: document.getElementById('detail-row'),
+      });
+      expect(targets[1]).toMatchObject({ handle: 'morluto', anchor: document.getElementById('quote-time') });
+    },
+  );
+
+  it.each(['/Alice/status/456', '/Bob/status/123', 'https://example.com/Alice/status/123', null])(
+    'does not use an unrelated detail permalink as evidence: %s', (permalink) => {
+      document.body.innerHTML = `
+        <article data-testid="tweet">
+          <div data-testid="User-Name"><a href="/Alice">Alice</a><a href="/Alice">@Alice</a></div>
+          ${permalink ? `<a href="${permalink}"><time>详情时间</time></a>` : ''}
+          <div role="link"><div data-testid="User-Name"><span>Bob</span><span>@Bob</span><time>1小时</time></div></div>
+        </article>
+      `;
+      expect(findXNoteSurfaceTargets(document, new URL('https://x.com/Alice/status/123')).map(target => target.handle))
+        .toEqual(['bob']);
+      expect(findXNoteSurfaceTargets(document, new URL('https://x.com/home')).map(target => target.handle))
+        .toEqual(['bob']);
+    },
+  );
+
+  it('keeps nested quotations separate without duplicating an enclosing quote wrapper', () => {
+    document.body.innerHTML = `
+      <article data-testid="tweet">
+        <div data-testid="quoteTweet"><div role="link">
+          <div data-testid="User-Name"><span>Bob</span><span>@Bob</span><time id="bob-time">1小时</time></div>
+          <div role="link">
+            <div data-testid="User-Name"><span>Carol</span><span>@Carol</span><time id="carol-time">2小时</time></div>
+          </div>
+        </div></div>
+      </article>
+    `;
+    expect(findXNoteSurfaceTargets(document, new URL('https://x.com/home')).map(target => [target.handle, target.anchor.id]))
+      .toEqual([['bob', 'bob-time'], ['carol', 'carol-time']]);
+  });
+
+  it.each([
+    '<span>Bob @Bob</span><time>1小时</time>',
+    '<span>@Bob</span><span>@Carol</span><time>1小时</time>',
+    '<span>@Bob</span>',
+    '<a href="https://example.com/Bob">Bob</a><span>@Bob</span><time>1小时</time>',
+    '<a href="/home">@Bob</a><time>1小时</time>',
+    '<a href="/Bob">Bob</a><span>@Bob</span><a href="/Carol/status/1"><time>1小时</time></a>',
+    '<span>@Bob</span><a href="https://example.com/Bob/status/1"><time>1小时</time></a>',
+  ])('skips ambiguous or mismatched quoted identities: %s', (identity) => {
+    document.body.innerHTML = `<article data-testid="tweet"><div role="link"><div data-testid="User-Name">${identity}</div></div></article>`;
+    expect(findXNoteSurfaceTargets(document, new URL('https://x.com/home'))).toEqual([]);
   });
 
   it.each([
     'data-testid="socialContext"',
     'data-testid="tweetText"',
-    'data-testid="quoteTweet"',
     'data-testid="card.wrapper"',
-    'role="link"',
+    'data-testid="tweetPhoto"',
+    'data-testid="videoPlayer"',
+    'role="menu"',
+    'role="dialog"',
     'hidden',
     'aria-hidden="true"',
   ])('ignores author-shaped content inside %s', (attributes) => {
     document.body.innerHTML = `
       <article data-testid="tweet">
         <div ${attributes}>
-          <div data-testid="User-Name">
+          <div role="link"><div data-testid="User-Name">
             <a href="/Alice">Alice</a>
             <a href="/Alice/status/123"><time>32 分钟</time></a>
-          </div>
+          </div></div>
         </div>
       </article>
     `;

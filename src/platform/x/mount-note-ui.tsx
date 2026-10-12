@@ -17,6 +17,10 @@ export function mountXNoteUi(
   host.dataset.teSurface = target.surface;
   if (isTweet) {
     host.style.display = 'none';
+    if (target.inlineContainer) {
+      // Detail handles and quoted identities can size themselves to their content.
+      host.style.flex = '0 1 auto';
+    }
   }
 
   const shadowRoot = host.attachShadow({ mode: 'open' });
@@ -29,7 +33,7 @@ export function mountXNoteUi(
   function placeHost() {
     let insertionAnchor = target.anchor;
     if (isTweet) {
-      const identity = target.anchor.closest('[data-testid="User-Name"], [data-testid="UserName"]');
+      const identity = target.inlineContainer ?? target.anchor.closest('[data-testid="User-Name"], [data-testid="UserName"]');
       // X wraps its time link in a non-shrinking flex item. Keep our label
       // beside that branch so it can shrink before the author's identity.
       while (identity && insertionAnchor.parentElement && insertionAnchor.parentElement !== identity) {
