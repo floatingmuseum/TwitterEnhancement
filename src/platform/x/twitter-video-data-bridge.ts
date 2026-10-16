@@ -37,15 +37,12 @@ export function extractTwitterVideoVariants(
       return;
     }
 
-    const existing = captures.get(tweetId);
-    captures.set(tweetId, {
+    const mediaKey = twitterMediaIdentityKey(identity);
+    const storeKey = tweetId ? `tweet:${tweetId}` : `media:${mediaKey}`;
+    const existing = captures.get(storeKey);
+    captures.set(storeKey, {
       tweetId,
-      mediaKeys: [
-        ...new Set([
-          ...(existing?.mediaKeys ?? []),
-          twitterMediaIdentityKey(identity),
-        ]),
-      ],
+      mediaKeys: [...new Set([...(existing?.mediaKeys ?? []), mediaKey])],
       urls: [...new Set([...(existing?.urls ?? []), url])],
     });
   }
@@ -103,6 +100,12 @@ export function captureTwitterVideoUrl(
   };
 }
 
+function captureStoreKey(item: CapturedTwitterVideoVariants): string {
+  return item.tweetId
+    ? `tweet:${item.tweetId}`
+    : `media:${item.mediaKeys.join('|')}`;
+}
+
 function readStore(documentRoot: Document): CapturedTwitterVideoVariants[] {
   const store = documentRoot.querySelector<HTMLElement>(
     `[${TWITTER_VIDEO_DATA_STORE_ATTRIBUTE}]`,
@@ -127,11 +130,14 @@ export function publishTwitterVideoVariants(
     return;
   }
 
-  const captures = new Map(readStore(documentRoot).map((item) => [item.tweetId, item]));
+  const captures = new Map(
+    readStore(documentRoot).map((item) => [captureStoreKey(item), item]),
+  );
   for (const addition of additions) {
-    const existing = captures.get(addition.tweetId);
-    captures.delete(addition.tweetId);
-    captures.set(addition.tweetId, {
+    const key = captureStoreKey(addition);
+    const existing = captures.get(key);
+    captures.delete(key);
+    captures.set(key, {
       tweetId: addition.tweetId,
       mediaKeys: [...new Set([...(existing?.mediaKeys ?? []), ...addition.mediaKeys])],
       urls: [...new Set([...(existing?.urls ?? []), ...addition.urls])],
@@ -139,11 +145,11 @@ export function publishTwitterVideoVariants(
   }
 
   while (captures.size > MAX_CAPTURED_TWEETS) {
-    const oldestTweetId = captures.keys().next().value as string | undefined;
-    if (!oldestTweetId) {
+    const oldestKey = captures.keys().next().value as string | undefined;
+    if (!oldestKey) {
       break;
     }
-    captures.delete(oldestTweetId);
+    captures.delete(oldestKey);
   }
 
   let store = documentRoot.querySelector<HTMLElement>(
@@ -185,12 +191,21 @@ export function readCapturedTwitterVideoUrls(
   for (const capture of readStore(documentRoot)) {
     const tweetMatches = Boolean(tweetId) && capture.tweetId === tweetId;
     const mediaMatches = capture.mediaKeys.some((key) => wantedMediaKeys.has(key));
-    if (tweetMatches || mediaMatches) {
-      for (const url of capture.urls) {
-        if (isDownloadableTwitterVideoUrl(url)) {
-          urls.add(url);
+    if (!tweetMatches && !mediaMatches) {
+      continue;
+    }
+
+    for (const url of capture.urls) {
+      if (!isDownloadableTwitterVideoUrl(url)) {
+        continue;
+      }
+      if (wantedMediaKeys.size > 0) {
+        const identity = parseTwitterMediaIdentity(url);
+        if (!identity || !wantedMediaKeys.has(twitterMediaIdentityKey(identity))) {
+          continue;
         }
       }
+      urls.add(url);
     }
   }
 

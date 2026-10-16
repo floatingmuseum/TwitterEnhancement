@@ -190,10 +190,12 @@ export function createXVideoDownloadManager(
             identity,
           ]),
         );
-        for (const candidate of candidates) {
-          const identity = parseTwitterMediaIdentity(candidate);
-          if (identity) {
-            identities.set(twitterMediaIdentityKey(identity), identity);
+        if (identities.size === 0) {
+          for (const candidate of candidates) {
+            const identity = parseTwitterMediaIdentity(candidate);
+            if (identity) {
+              identities.set(twitterMediaIdentityKey(identity), identity);
+            }
           }
         }
         return findBestTwitterVideoUrls([...identities.values()], candidates);

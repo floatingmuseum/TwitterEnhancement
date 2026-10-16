@@ -98,6 +98,9 @@ describe('X video download manager', () => {
     resources = [
       'https://video.twimg.com/ext_tw_video/987/pu/vid/640x360/clip.mp4?tag=1',
       'https://video.twimg.com/ext_tw_video/987/pu/vid/1280x720/clip.mp4?tag=1',
+      'https://video.twimg.com/ext_tw_video/987/pu/vid/avc1/0/0/1920x1080/init.mp4',
+      'https://video.twimg.com/amplify_video/555/vid/1280x720/other-tweet.mp4?tag=14',
+      'https://video.twimg.com/amplify_video/666/vid/avc1/0/0/720x1280/other-init.mp4',
     ];
 
     expect(resolveMountedUrls()).toEqual([resources[1]]);

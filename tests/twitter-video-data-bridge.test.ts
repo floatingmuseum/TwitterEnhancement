@@ -133,5 +133,30 @@ describe('X video data bridge', () => {
         'https://video.twimg.com/ext_tw_video/654/pl/master.m3u8',
       ),
     ).toBeNull();
+    expect(
+      captureTwitterVideoUrl(
+        'https://video.twimg.com/ext_tw_video/654/pu/vid/avc1/0/0/1920x1080/init.mp4',
+      ),
+    ).toBeNull();
+  });
+
+  it('does not leak unrelated direct video captures with empty tweetId', () => {
+    const firstUrl =
+      'https://video.twimg.com/ext_tw_video/111/pu/vid/1280x720/first.mp4?tag=12';
+    const secondUrl =
+      'https://video.twimg.com/ext_tw_video/222/pu/vid/1280x720/second.mp4?tag=12';
+
+    const firstCapture = captureTwitterVideoUrl(firstUrl);
+    const secondCapture = captureTwitterVideoUrl(secondUrl);
+    expect(firstCapture).not.toBeNull();
+    expect(secondCapture).not.toBeNull();
+
+    publishTwitterVideoVariants(document, [firstCapture!, secondCapture!]);
+
+    expect(
+      readCapturedTwitterVideoUrls(document, '999', [
+        { family: 'ext_tw_video', id: '111' },
+      ]),
+    ).toEqual([firstUrl]);
   });
 });

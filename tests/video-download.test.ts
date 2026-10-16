@@ -57,6 +57,36 @@ describe('Twitter video download model', () => {
         'https://video.twimg.com/amplify_video/123/pl/playlist.m3u8',
       ),
     ).toBe(false);
+    expect(
+      isDownloadableTwitterVideoUrl(
+        'https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/0/0/1280x720/init.mp4',
+      ),
+    ).toBe(false);
+    expect(
+      isDownloadableTwitterVideoUrl(
+        'https://video.twimg.com/amplify_video/123/vid/avc1/0/0/1280x720/init.mp4',
+      ),
+    ).toBe(false);
+    expect(
+      isDownloadableTwitterVideoUrl(
+        'https://video.twimg.com/ext_tw_video/123/pu/aud/mp4a/0/0/128000/audio.mp4',
+      ),
+    ).toBe(false);
+    expect(
+      isDownloadableTwitterVideoUrl(
+        'https://video.twimg.com/amplify_video/123/pl/avc1/720x1280/init.mp4',
+      ),
+    ).toBe(false);
+    expect(
+      isDownloadableTwitterVideoUrl(
+        'https://video.twimg.com/amplify_video/123/vid/720x720/clip.mp4?container=fmp4',
+      ),
+    ).toBe(false);
+    expect(
+      isDownloadableTwitterVideoUrl(
+        'https://video.twimg.com/tweet_video/ExampleClip.mp4',
+      ),
+    ).toBe(true);
   });
 
   it('builds stable filenames and numbers multi-video tweets', () => {

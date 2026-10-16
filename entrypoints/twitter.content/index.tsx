@@ -48,7 +48,9 @@ export default defineContentScript({
           target.tweetId,
           target.identities,
         ),
-        ...performance.getEntriesByType('resource').map((entry) => entry.name),
+        ...(target.identities.length > 0
+          ? performance.getEntriesByType('resource').map((entry) => entry.name)
+          : []),
       ],
     );
     let animationFrame: number | null = null;

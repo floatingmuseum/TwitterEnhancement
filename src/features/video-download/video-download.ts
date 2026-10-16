@@ -45,14 +45,42 @@ export function twitterMediaIdentityKey(identity: TwitterMediaIdentity): string 
   return `${identity.family}:${identity.id}`;
 }
 
+function isFragmentedTwitterStreamUrl(
+  url: URL,
+  identity: TwitterMediaIdentity,
+): boolean {
+  if (url.searchParams.get('container')?.toLowerCase() === 'fmp4') {
+    return true;
+  }
+
+  const subSegments = url.pathname
+    .toLowerCase()
+    .split('/')
+    .filter(Boolean)
+    .slice(2);
+
+  if (
+    subSegments.includes('pl') ||
+    subSegments.includes('aud') ||
+    subSegments.includes('mp4a') ||
+    subSegments.some((segment) => /^\d+$/.test(segment))
+  ) {
+    return true;
+  }
+
+  return identity.family !== 'tweet_video' && !subSegments.includes('vid');
+}
+
 export function isDownloadableTwitterVideoUrl(value: string): boolean {
   try {
     const url = new URL(value);
+    const identity = parseTwitterMediaIdentity(value);
     return (
       url.protocol === 'https:' &&
       url.hostname.toLowerCase() === 'video.twimg.com' &&
       /\.mp4$/i.test(url.pathname) &&
-      parseTwitterMediaIdentity(value) !== null
+      identity !== null &&
+      !isFragmentedTwitterStreamUrl(url, identity)
     );
   } catch {
     return false;
