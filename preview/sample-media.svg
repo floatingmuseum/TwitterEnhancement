@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540">
+  <title>演示媒体：海岸插画</title>
+  <rect width="960" height="540" fill="#d4eaf3"/>
+  <circle cx="706" cy="143" r="53" fill="#fff4d3"/>
+  <path d="M0 289 168 192 318 305 488 227 662 321 960 245V540H0Z" fill="#90b6bd"/>
+  <path d="M0 329Q270 293 490 331T960 311V540H0Z" fill="#599fae"/>
+  <path d="M0 407Q180 343 393 408T960 389V540H0Z" fill="#357e92"/>
+  <path d="M0 483Q235 392 480 484T960 461V540H0Z" fill="#e6d9b8"/>
+  <path d="m602 365 105-7m-418 71 77-9m471 11 82-5" stroke="#d4eaf3" stroke-width="3" stroke-linecap="round"/>
+</svg>

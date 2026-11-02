@@ -91,7 +91,7 @@ function applyTheme(theme: 'dark' | 'light') {
 
 mountPreview('profile-note', 'profile');
 mountPreview('hover-note', 'hover-card');
-applyTheme('dark');
+applyTheme('light');
 
 document.getElementById('theme-toggle')?.addEventListener('click', () => {
   applyTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark');
