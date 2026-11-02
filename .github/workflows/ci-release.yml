@@ -1,0 +1,148 @@
+name: CI and Release
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  build:
+    name: Check and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      package-file: ${{ steps.package.outputs.file }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Validate release version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
+          if (process.env.REF_TYPE === 'tag') {
+            if (!/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(process.env.REF_NAME)) {
+              throw new Error('Release 标签必须使用 v主版本.次版本.修订版本，例如 v0.1.0。');
+            }
+            if (process.env.REF_NAME !== `v${version}`) {
+              throw new Error(`标签 ${process.env.REF_NAME} 与 package.json 版本 ${version} 不一致。`);
+            }
+          }
+          NODE
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          cache: true
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      # WXT zip performs a production build before creating the archive.
+      - name: Build and zip
+        run: pnpm zip
+
+      - name: Verify extension package
+        id: package
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          package = json.loads(Path('package.json').read_text(encoding='utf-8'))
+          filename = f"{package['name']}-{package['version']}-chrome.zip"
+          with ZipFile(Path('dist') / filename) as archive:
+              if archive.testzip() is not None:
+                  raise SystemExit('ZIP 校验失败。')
+              manifest = json.loads(archive.read('manifest.json'))
+              if manifest['manifest_version'] != 3 or manifest['version'] != package['version']:
+                  raise SystemExit('安装包的 Manifest 或版本与项目不一致。')
+              files = set(archive.namelist())
+              references = list(manifest['icons'].values())
+              references += list(manifest['action']['default_icon'].values())
+              references += [manifest['background']['service_worker'], manifest['options_ui']['page']]
+              for script in manifest['content_scripts']:
+                  references += script.get('js', []) + script.get('css', [])
+              if any(reference not in files for reference in references):
+                  raise SystemExit('安装包缺少 Manifest 引用的资源。')
+              if any(name.endswith('.zip') for name in files):
+                  raise SystemExit('安装包中不应嵌套其他 ZIP。')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'file={filename}\n')
+          PY
+
+      - name: Upload extension package
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: dist/${{ steps.package.outputs.file }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish release
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified package
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: release
+          merge-multiple: true
+          skip-decompress: true
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          PACKAGE_FILE: ${{ needs.build.outputs.package-file }}
+        run: |
+          cat > release-notes.md <<EOF
+          下载附件中的 \`$PACKAGE_FILE\`，无需安装 Node.js 或自行编译。\`Source code\` 是源码归档，不是安装包。
+
+          **安装：** 解压到固定文件夹，在 \`chrome://extensions\` 或 \`edge://extensions\` 开启「开发者模式」，点击「加载已解压的扩展程序」，选择包含 \`manifest.json\` 的文件夹。安装后保留该文件夹。
+
+          **更新：** 先导出备注备份，关闭扩展设置页，将新版文件替换到原安装目录，在扩展管理页点击「重新加载」，再刷新 X / Twitter 页面。不要先卸载扩展；卸载会清除本地备注和设置。备注备份不包含其他设置。
+
+          [完整安装与更新说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/README.md#安装)
+          EOF
+          gh release create "$RELEASE_TAG" "release/$PACKAGE_FILE" \
+            --verify-tag \
+            --title "Twitter Enhancement $RELEASE_TAG" \
+            --generate-notes \
+            --notes-file release-notes.md

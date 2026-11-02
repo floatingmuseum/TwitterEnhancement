@@ -4,6 +4,8 @@
 
 备注与设置只保存在当前浏览器，不上传、不做云同步。点击浏览器工具栏中的扩展图标，即可打开设置页。
 
+[下载最新安装包](https://github.com/floatingmuseum/TwitterEnhancement/releases/latest) · [安装与更新](#安装)
+
 [私人备注](#私人备注) · [搜索与备份](#备注搜索与备份) · [时间线过滤](#时间线过滤) · [界面整理](#界面整理) · [侧栏收起](#侧栏收起) · [连续看媒体](#连续浏览媒体) · [图片与视频下载](#图片与视频下载) · [外部视频](#外部视频直达原站)
 
 > 配图统一使用亮色主题，来自项目的本地预览与示例数据；实际位置随 X 页面布局而变化。
@@ -87,16 +89,27 @@
 
 ## 安装
 
-当前可从源码构建，再加载到 Chrome / Edge。需要 Node.js 20.12+，使用项目指定的 `pnpm@11.1.3`。
+推荐下载已经构建好的 Release 安装包，**不需要 clone 仓库、安装 Node.js 或自行编译**。同一个 Chrome 包可以加载到 Chrome / Edge。
 
-```sh
-pnpm install
-pnpm build
-```
+1. 打开 [最新 Release](https://github.com/floatingmuseum/TwitterEnhancement/releases/latest)，在 **Assets** 中下载 `twitter-enhancement-版本号-chrome.zip`。不要下载 `Source code (zip)` 或 `Source code (tar.gz)`，它们是源码归档。
+2. 将安装包解压到一个长期保留的固定文件夹，例如 `D:\Extensions\TwitterEnhancement`。解压后的文件夹根目录应直接包含 `manifest.json`。
+3. 打开 `chrome://extensions` 或 `edge://extensions`，开启右上角的「开发者模式」。
+4. 点击「加载已解压的扩展程序」，选择上一步包含 `manifest.json` 的文件夹。
+5. 打开或刷新 X / Twitter 页面。将扩展固定到工具栏，方便进入设置。
 
-1. 打开 `chrome://extensions` 或 `edge://extensions`，开启「开发者模式」。
-2. 点击「加载已解压的扩展程序」，选择项目根目录下的 `dist` 文件夹。
-3. 打开或刷新 X / Twitter 页面。将扩展固定到工具栏，方便进入设置。
+安装后不要删除或移动这个文件夹，浏览器会持续从中读取扩展文件。若尚未发布首个 Release，可先按下方「参与开发」中的步骤从源码构建。
+
+### 更新
+
+通过上述方式安装的扩展不会自动从 GitHub 更新，需要手动更新文件：
+
+1. 在扩展设置页点击「导出备注」，保存备份，然后关闭扩展设置页。备注备份只包含备注，不包含时间线和界面设置。
+2. 从 [最新 Release](https://github.com/floatingmuseum/TwitterEnhancement/releases/latest) 下载新版 `twitter-enhancement-版本号-chrome.zip`，先解压到临时文件夹。
+3. 保留原安装文件夹及其路径，将其中的旧扩展文件替换为新版全部文件。不要把新版放进原目录里的另一层子文件夹；`manifest.json` 应仍位于原目录根部。
+4. 在扩展管理页找到 Twitter Enhancement，点击「重新加载」（圆形箭头），确认版本号已更新。
+5. 刷新已经打开的 X / Twitter 页面，再打开扩展设置页。
+
+**不要先卸载扩展。** 在同一浏览器资料和原安装路径下替换文件并重新加载，可保留本地备注与设置；卸载扩展会清除这些数据。如果之前是从源码的 `dist` 目录加载，也应继续更新该目录。需要迁移目录或浏览器时，先导出备注，重新安装后再导入，并重新配置其他设置。
 
 ## 数据与使用范围
 
@@ -108,12 +121,21 @@ pnpm build
 <details>
 <summary>参与开发</summary>
 
-项目使用 WXT、React、TypeScript 和 Vitest。
+项目使用 WXT、React、TypeScript 和 Vitest。推荐使用 Node.js 24，与 CI 保持一致；包管理器固定为 `pnpm@11.1.3`。
 
 ```sh
 pnpm install
 pnpm dev
 ```
+
+从源码构建并安装：
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build
+```
+
+然后在扩展管理页开启「开发者模式」，点击「加载已解压的扩展程序」，选择项目根目录的 `dist` 文件夹。运行 `pnpm zip` 会重新执行生产构建，并在 `dist` 中生成 `twitter-enhancement-版本号-chrome.zip`，解压即可加载。
 
 提交修改前运行：
 
@@ -122,6 +144,26 @@ pnpm typecheck
 pnpm test
 pnpm build
 ```
+
+### 自动检查与发布
+
+推送到 `master` 会运行 [CI and Release](https://github.com/floatingmuseum/TwitterEnhancement/actions/workflows/ci-release.yml)：使用锁文件安装依赖，执行类型检查、全部测试和生产打包，再校验 ZIP 中的 Manifest 与版本。通过后可在该次 Actions 运行的 **Artifacts** 中下载扩展 ZIP，产物保留 30 天；下载需要登录 GitHub。这些包用于测试，普通用户优先使用 Release。
+
+发布稳定版本时：
+
+1. 将 `package.json` 的 `version` 更新为准备发布的版本，例如 `0.1.1`，提交到 `master`。首个版本可使用当前的 `0.1.0`。
+2. 推送提交，确认主分支 CI 通过，并在真实 X 页面验证需要发布的功能。
+3. 在对应提交上创建并推送标签。标签只支持 `v主版本.次版本.修订版本`，必须与 `package.json` 完全一致，例如：
+
+   ```sh
+   git push origin master
+   git tag -a v0.1.1 -m "发布 v0.1.1"
+   git push origin v0.1.1
+   ```
+
+标签推送会重新执行检查和打包；全部通过后，工作流自动创建 GitHub Release，上传已校验的 ZIP，并生成包含安装、更新提示和变更记录的说明。标签格式错误或版本不一致会直接失败，不会发布。已经发布的标签不要移动，后续修复应使用新版本。
+
+工作流使用 GitHub 自动提供的 `GITHUB_TOKEN`，仅发布任务申请 `contents: write`，无需配置个人访问令牌。仓库需要启用 Actions，并允许工作流申请该权限。首次启用时先把工作流推送到 `master`，再创建版本标签。
 
 运行 `pnpm preview:ui` 可查看本地组件预览：
 

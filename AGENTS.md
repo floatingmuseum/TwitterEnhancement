@@ -14,7 +14,7 @@ Twitter Enhancement 是一个 WXT 驱动的 Chromium 扩展，使用 React、Typ
 
 ## 技术栈与命令
 
-使用 Node.js 20.12+ 和 pnpm。`packageManager` 固定为 `pnpm@11.1.3`。
+推荐使用 Node.js 24，与 CI 保持一致。`packageManager` 固定为 `pnpm@11.1.3`。
 
 常用命令：
 
@@ -24,10 +24,13 @@ pnpm dev
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm zip
 pnpm preview:ui
 ```
 
 `pnpm dev` 启动 WXT 开发流程，`pnpm build` 输出到 `dist`。`pnpm preview:ui` 只用于本地预览页面，不代表真实 X DOM 环境。
+
+`pnpm zip` 会重新执行生产构建，在 `dist` 中生成可解压加载的扩展 ZIP。`.github/workflows/ci-release.yml` 在推送 `master` 时检查和打包，在推送与 `package.json` 版本一致的 `vX.Y.Z` 标签时检查后发布 Release；不要在未获授权时推送提交或标签。
 
 ## 目录职责
 
