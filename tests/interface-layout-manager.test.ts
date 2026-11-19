@@ -625,7 +625,113 @@ describe('X interface layout manager', () => {
     }
   });
 
-  it.each(['single-slide', 'mixed-video', 'unknown-spacer'])(
+  it.each(['video-and-photos', 'played-video-and-photo', 'multi-video'])(
+    'expands mixed and multi-video carousels without constraining sibling slides: %s',
+    async (variant) => {
+      const { manager } = await collapseDesktopMedia();
+      try {
+        const { target, spacer, list, measure } = appendPhotoCarousel(
+          requiredElement('#tweet-body'),
+        );
+        const slides = Array.from(list.children);
+        if (variant === 'video-and-photos') {
+          slides[0]!.innerHTML = `
+            <div style="aspect-ratio: 0.5625 / 1">
+              <div data-testid="videoComponent">
+                <div data-testid="videoPlayer">
+                  <video></video>
+                  <div role="group"><button>Pause</button><button>Mute</button></div>
+                </div>
+              </div>
+            </div>
+          `;
+        } else if (variant === 'played-video-and-photo') {
+          slides[0]!.innerHTML = `
+            <div style="aspect-ratio: 0.5625 / 1">
+              <div data-testid="videoPlayer">
+                <video></video>
+                <div role="group"><button>Pause</button><button>Volume</button></div>
+              </div>
+            </div>
+          `;
+          slides.slice(2).forEach((slide) => slide.remove());
+        } else {
+          slides[0]!.innerHTML = `
+            <div style="aspect-ratio: 0.5625 / 1">
+              <div data-testid="videoPlayer">
+                <video></video>
+                <div role="group"><button>Pause</button></div>
+              </div>
+            </div>
+          `;
+          slides[1]!.innerHTML = `
+            <div style="aspect-ratio: 0.5625 / 1">
+              <div data-testid="videoComponent">
+                <div data-testid="videoPlayer">
+                  <video></video>
+                  <div role="group"><button>Pause</button></div>
+                </div>
+              </div>
+            </div>
+          `;
+          slides.slice(2).forEach((slide) => slide.remove());
+        }
+
+        manager.sync();
+        manager.sync();
+
+        expect(target.style.maxWidth).toBe('none');
+        expect(spacer).toHaveStyle({ paddingBottom: 'calc(min(66%, 324px))' });
+        expect(measure).toHaveBeenCalledTimes(1);
+        for (const slide of Array.from(list.children) as HTMLElement[]) {
+          expect(slide.style.maxWidth).toBe('');
+        }
+        expect(requiredElement('#tweet-body').style.maxWidth).toBe('');
+      } finally {
+        manager.destroy();
+      }
+    },
+  );
+
+  it('keeps a video-plus-photo carousel expanded when playback replaces the video preview', async () => {
+    const { manager } = await collapseDesktopMedia();
+    try {
+      const { target, spacer, list, measure } = appendPhotoCarousel(
+        requiredElement('#tweet-body'),
+      );
+      const slides = Array.from(list.children);
+      slides[0]!.innerHTML = `
+        <div style="aspect-ratio: 0.5625 / 1">
+          <div data-testid="tweetPhoto"><img /><button data-testid="playButton">Play</button></div>
+        </div>
+      `;
+      slides.slice(2).forEach((slide) => slide.remove());
+
+      manager.sync();
+      expect(target.style.maxWidth).toBe('none');
+      expect(spacer).toHaveStyle({ paddingBottom: 'calc(min(66%, 324px))' });
+      expect(measure).toHaveBeenCalledTimes(1);
+
+      slides[0]!.innerHTML = `
+        <div style="aspect-ratio: 0.5625 / 1">
+          <div data-testid="videoPlayer">
+            <video></video>
+            <div role="group"><button>Pause</button><button>Volume</button></div>
+          </div>
+        </div>
+      `;
+      manager.sync();
+
+      expect(target.style.maxWidth).toBe('none');
+      expect(spacer).toHaveStyle({ paddingBottom: 'calc(min(66%, 324px))' });
+      expect(measure).toHaveBeenCalledTimes(1);
+      expect((slides[1] as HTMLElement).style.maxWidth).toBe('');
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  it.each(['single-slide', 'single-video-slide', 'card-carousel', 'unknown-spacer'])(
     'keeps the native media limit when a carousel is unsupported: %s',
     async (variant) => {
       const { manager } = await collapseDesktopMedia();
@@ -633,8 +739,15 @@ describe('X interface layout manager', () => {
         const { target, spacer, list } = appendPhotoCarousel(requiredElement('#tweet-body'));
         if (variant === 'single-slide') {
           Array.from(list.children).slice(1).forEach((slide) => slide.remove());
-        } else if (variant === 'mixed-video') {
-          list.firstElementChild?.insertAdjacentHTML('beforeend', '<div data-testid="videoPlayer"><video></video></div>');
+        } else if (variant === 'single-video-slide') {
+          list.firstElementChild!.innerHTML =
+            '<div data-testid="videoPlayer"><video></video><div role="group"><button>Pause</button></div></div>';
+          Array.from(list.children).slice(1).forEach((slide) => slide.remove());
+        } else if (variant === 'card-carousel') {
+          list.firstElementChild?.insertAdjacentHTML(
+            'beforeend',
+            '<div data-testid="card.wrapper"><a href="https://example.com"><img /></a></div>',
+          );
         } else {
           spacer.style.removeProperty('padding-bottom');
         }

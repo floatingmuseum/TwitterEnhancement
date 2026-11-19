@@ -20,7 +20,7 @@ interface NormalDesktopLayoutMeasurement {
   viewportWidth: number;
 }
 
-interface PhotoCarouselSize {
+interface MediaCarouselSize {
   height: number;
   paddingBottom: string;
 }
@@ -66,6 +66,27 @@ const SIDEBAR_HIDDEN_STYLES = {
   width: '0px',
 } as const;
 
+const CAROUSEL_SLIDE_MEDIA_SELECTOR =
+  '[data-testid="tweetPhoto"], [data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid="playButton"], video';
+
+function isExternalMediaBoundary(
+  boundary: Element,
+  target: HTMLElement,
+): boolean {
+  if (target.contains(boundary)) {
+    return false;
+  }
+  if (
+    boundary.getAttribute('role') === 'group' &&
+    boundary.closest(
+      '[data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid="ScrollSnap-List"]',
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function findTweetMediaTargets(primary: HTMLElement): HTMLElement[] {
   const targets = new Set<HTMLElement>();
   for (const media of primary.querySelectorAll<HTMLElement>(
@@ -87,7 +108,7 @@ function findTweetMediaTargets(primary: HTMLElement): HTMLElement[] {
           parent.querySelectorAll(
             '[data-testid="tweetText"], [data-testid="User-Name"], [role="group"], article',
           ),
-        ).some((boundary) => !target.contains(boundary))
+        ).some((boundary) => isExternalMediaBoundary(boundary, target))
       ) {
         break;
       }
@@ -98,18 +119,26 @@ function findTweetMediaTargets(primary: HTMLElement): HTMLElement[] {
   return [...targets];
 }
 
-function findPhotoCarouselSpacer(target: HTMLElement): HTMLElement | null {
+function isCarouselMediaSlide(slide: Element): boolean {
+  return (
+    slide.matches(CAROUSEL_SLIDE_MEDIA_SELECTOR) ||
+    slide.querySelector(CAROUSEL_SLIDE_MEDIA_SELECTOR) !== null
+  );
+}
+
+function findMediaCarouselSpacer(target: HTMLElement): HTMLElement | null {
   const lists = target.querySelectorAll<HTMLElement>('[data-testid="ScrollSnap-List"]');
   const list = lists.item(0);
   if (
     lists.length !== 1 ||
     !list ||
-    Array.from(list.children).filter((slide) => slide.querySelector('[data-testid="tweetPhoto"]')).length < 2 ||
-    list.querySelector('[data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid="playButton"], video')
+    list.closest('[data-testid="card.wrapper"]') ||
+    list.querySelector('[data-testid="card.wrapper"]') ||
+    Array.from(list.children).filter(isCarouselMediaSlide).length < 2
   ) {
     return null;
   }
-  // X sizes its horizontal photo strips with a percentage-padding spacer.
+  // X sizes its horizontal media strips with a percentage-padding spacer.
   // Keep that native height while allowing the scrollport to fill the column.
   let spacer = list.parentElement;
   while (spacer && target.contains(spacer)) {
@@ -251,7 +280,7 @@ export function createXInterfaceLayoutManager(
   let normalDesktopLayout: NormalDesktopLayoutMeasurement | null = null;
   let normalPrimaryWidth: number | null = null;
   let mediaWidths = new WeakMap<HTMLElement, number>();
-  let carouselSizes = new WeakMap<HTMLElement, PhotoCarouselSize>();
+  let carouselSizes = new WeakMap<HTMLElement, MediaCarouselSize>();
   let destroyed = false;
   let preferenceRevision = 0;
 
@@ -662,7 +691,7 @@ export function createXInterfaceLayoutManager(
       }
       const mediaTargets = findTweetMediaTargets(primary);
       const carouselSpacers = new Map(
-        mediaTargets.map((target) => [target, findPhotoCarouselSpacer(target)]),
+        mediaTargets.map((target) => [target, findMediaCarouselSpacer(target)]),
       );
       const unmeasuredTargets = mediaTargets.filter(
         (target) => {
@@ -712,12 +741,12 @@ export function createXInterfaceLayoutManager(
         const carouselSize = spacer ? carouselSizes.get(spacer) : undefined;
         if (spacer && carouselSize) {
           current.add(target);
-          applyStyles(rightStyledElements, target, 'tweet-photo-carousel', {
+          applyStyles(rightStyledElements, target, 'tweet-media-carousel', {
             'box-sizing': 'border-box',
             'max-width': 'none',
           });
           current.add(spacer);
-          applyStyles(rightStyledElements, spacer, 'tweet-photo-carousel-height', {
+          applyStyles(rightStyledElements, spacer, 'tweet-media-carousel-height', {
             // Retain the percentage for narrower layouts, but cap growth at
             // the height measured with the native column width.
             'padding-bottom': `calc(min(${carouselSize.paddingBottom}, ${carouselSize.height}px))`,
