@@ -112,8 +112,14 @@ function findSemanticMediaTarget(media: HTMLElement, article: HTMLElement): HTML
   const link = media.closest<HTMLElement>('a[target="_blank"], a[class~="group/article-card"]');
   // Playing videos have a second ratio box inside the outer attachment.
   const player = media.closest<HTMLElement>('[data-press-control]');
-  const ratio = player?.parentElement?.closest<HTMLElement>('[style*="aspect-ratio"]')
+  let ratio = player?.parentElement?.closest<HTMLElement>('[style*="aspect-ratio"]')
     ?? media.closest<HTMLElement>('[style*="aspect-ratio"]');
+  // GIFs wrap the player in a second ratio box that reserves the tweet's space.
+  const frame = ratio?.parentElement;
+  if (ratio?.style.aspectRatio && frame && frame !== article && frame.childElementCount === 1 &&
+      frame.style.aspectRatio === ratio.style.aspectRatio) {
+    ratio = frame;
+  }
   const visual = link ?? ratio ?? player ?? (media.matches('video') ? media : null);
   if (!visual || !article.contains(visual)) return null;
 

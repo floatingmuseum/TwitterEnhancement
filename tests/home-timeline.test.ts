@@ -262,6 +262,36 @@ it('caps complete semantic ad and article cards when loaded into a wide home fee
   manager.destroy();
 });
 
+it.each(['1.8 / 1', '1 / 1'])('caps the entire %s GIF frame before and during playback', async (ratio) => {
+  const main = document.querySelector('main')!;
+  const post = main.querySelector('article')!;
+  post.innerHTML = `<p>Reply</p><div id="attachment" style="aspect-ratio: ${ratio}">
+    <div class="w-full" style="aspect-ratio: ${ratio}"><div>
+      <img src="https://pbs.twimg.com/tweet_video_thumb/poster.jpg"><button>GIF</button>
+    </div></div></div><div role="group">Reply actions</div>`;
+  const frame = post.querySelector<HTMLElement>('#attachment')!;
+  const inner = frame.firstElementChild as HTMLElement;
+  vi.spyOn(main, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 600, 800));
+  for (const element of [frame, inner]) {
+    vi.spyOn(element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 518, 518 / parseFloat(ratio)));
+  }
+  const repository = new LocalInterfaceLayoutPreferenceRepository(new FakeExtensionLocalStorage());
+  const manager = createXInterfaceLayoutManager(repository);
+  try {
+    await repository.setPreference('rightSidebarVisible', false);
+    expect(frame.style.maxWidth).toBe('min(100%, 518px)');
+    inner.querySelector('img')!.replaceWith(document.createElement('video'));
+    manager.sync();
+    expect(frame.style.maxWidth).toBe('min(100%, 518px)');
+    expect(inner.style.maxWidth).toBe('');
+    await repository.setPreference('rightSidebarVisible', true);
+    expect(frame.style.maxWidth).toBe('');
+    expect(frame.style.aspectRatio).toBe(ratio);
+  } finally {
+    manager.destroy();
+  }
+});
+
 it('caps the native height of a semantic carousel while letting the strip and slides use the available space', async () => {
   const main = document.querySelector('main')!;
   const post = main.querySelector('article')!;
