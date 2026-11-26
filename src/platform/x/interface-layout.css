@@ -1,0 +1,4 @@
+/* Apply the saved state to replacement rails before the next content-script scan. */
+:root:is([data-te-initial-wide-layout], [data-te-left-navigation-collapsed]) div:has(> [data-rail-overflow]) {
+  --x-sidebar-open: 0 !important;
+}

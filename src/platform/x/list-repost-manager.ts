@@ -7,6 +7,7 @@ import {
   type ListRepostPreferences,
 } from '../../features/list-reposts/list-repost-preference';
 import { isPromotedTweetArticle } from './promoted-tweet';
+import { frameIdentity, POST_FRAME_SELECTOR } from './post-frame';
 import { isDarkXPage } from './theme';
 
 export type XRepostTimelineSurface = 'home' | 'list' | 'profile';
@@ -36,6 +37,7 @@ interface InlineDisplayState {
 }
 
 interface HiddenArticleState extends InlineDisplayState {
+  container: HTMLElement;
   mode: HiddenRepostDisplayMode;
   kind: HiddenArticleKind;
   placeholderHost: HTMLElement | null;
@@ -173,6 +175,20 @@ export function findXRepostTimelineTarget(
     return null;
   }
 
+  if (route.surface === 'home') {
+    const lists = root.querySelectorAll<HTMLElement>('main section[aria-labelledby] [id^="urt:home:"] > ul');
+    const timeline = Array.from(lists).find(list => !list.closest('[hidden], [aria-hidden="true"]'));
+    if (timeline) {
+      return {
+        controlAnchor: timeline.closest('section[aria-labelledby]'),
+        controlPlacement: 'before',
+        timeline,
+        routeKey: route.key,
+        surface: route.surface,
+      };
+    }
+  }
+
   const primaryColumn = root.querySelector<HTMLElement>('[data-testid="primaryColumn"]');
   if (!primaryColumn) {
     return null;
@@ -211,14 +227,22 @@ export function findXRepostTimelineTarget(
   };
 }
 
-export function isPlainRepostArticle(article: HTMLElement): boolean {
-  if (!article.matches('article')) {
-    return false;
+function repostContext(article: HTMLElement): string | undefined {
+  const marker = article.querySelector<HTMLElement>('[data-testid="socialContext"]');
+  const enclosingLink = marker?.closest('[data-testid="quoteTweet"], [role="link"]');
+  if (marker?.closest('article') === article && !(enclosingLink && article.contains(enclosingLink))) {
+    return marker.textContent?.trim();
   }
+  // In the semantic layout only the attribution row, above the original
+  // post, pairs the repost icon with a profile link. Ignore action buttons.
+  const row = article.firstElementChild;
+  if (row?.querySelector(':scope > span [data-icon="icon-repost-fill"]')) {
+    return row.querySelector(':scope > div > a[href]')?.textContent?.trim();
+  }
+}
 
-  const socialContext = article
-    .querySelector('[data-testid="socialContext"]')
-    ?.textContent?.trim();
+export function isPlainRepostArticle(article: HTMLElement): boolean {
+  const socialContext = article.matches('article') && repostContext(article);
   return socialContext
     ? /(?:\bReposted\b|(?:已)?转(?:帖|贴)(?:了)?)/iu.test(socialContext)
     : false;
@@ -255,6 +279,7 @@ class TimelineArticleVisibilityController {
     }
 
     for (const article of timeline.querySelectorAll<HTMLElement>('article')) {
+      if (article.parentElement?.closest('article')) continue;
       const kind = getHiddenArticleKind(article, preferences);
       if (!kind || (kind === 'plain-repost' && this.isTemporarilyExpanded(article))) {
         continue;
@@ -286,10 +311,20 @@ class TimelineArticleVisibilityController {
     kind: HiddenArticleKind,
   ): void {
     let state = this.hiddenArticles.get(article);
+    const frame = article.parentElement;
+    const isVirtualRowWrapper = frame?.parentElement?.matches('li[data-index]') &&
+      frame.childElementCount === 1 && frame.tagName === 'DIV';
+    const container = frame && (isVirtualRowWrapper || (frame.matches(POST_FRAME_SELECTOR) && frameIdentity(frame)))
+      ? frame : article;
+    if (state && state.container !== container) {
+      this.restore(article);
+      state = undefined;
+    }
     if (!state) {
       state = {
-        value: article.style.getPropertyValue('display'),
-        priority: article.style.getPropertyPriority('display'),
+        container,
+        value: container.style.getPropertyValue('display'),
+        priority: container.style.getPropertyPriority('display'),
         mode,
         kind,
         placeholderHost: null,
@@ -305,7 +340,7 @@ class TimelineArticleVisibilityController {
     }
 
     if (mode !== 'hidden' && !state.placeholderHost) {
-      state.placeholderHost = this.createPlaceholder(article, mode);
+      state.placeholderHost = this.createPlaceholder(article, container, mode);
     }
     if (state.placeholderHost) {
       state.placeholderHost.dataset.teTheme = isDarkXPage() ? 'dark' : 'light';
@@ -319,11 +354,13 @@ class TimelineArticleVisibilityController {
     } else {
       article.dataset.twitterEnhancementHiddenPlainRepost = mode;
     }
-    article.style.setProperty('display', 'none', 'important');
+    container.style.setProperty('display', 'none', 'important');
+    container.toggleAttribute('data-te-fully-hidden', mode === 'hidden');
   }
 
   private createPlaceholder(
     article: HTMLElement,
+    container: HTMLElement,
     mode: Exclude<HiddenRepostDisplayMode, 'hidden'>,
   ): HTMLElement | null {
     if (!article.parentElement) {
@@ -371,7 +408,7 @@ class TimelineArticleVisibilityController {
       this.restore(article);
     });
 
-    article.insertAdjacentElement('beforebegin', host);
+    container.insertAdjacentElement('beforebegin', host);
     return host;
   }
 
@@ -415,9 +452,10 @@ class TimelineArticleVisibilityController {
     }
 
     previous.placeholderHost?.remove();
-    article.style.removeProperty('display');
+    previous.container.removeAttribute('data-te-fully-hidden');
+    previous.container.style.removeProperty('display');
     if (previous.value) {
-      article.style.setProperty('display', previous.value, previous.priority);
+      previous.container.style.setProperty('display', previous.value, previous.priority);
     }
     delete article.dataset.twitterEnhancementHiddenPlainRepost;
     delete article.dataset.twitterEnhancementHiddenPromotedTweet;
@@ -426,9 +464,7 @@ class TimelineArticleVisibilityController {
 }
 
 function getPlainRepostLabel(article: HTMLElement): string {
-  const socialContext = article
-    .querySelector('[data-testid="socialContext"]')
-    ?.textContent?.trim();
+  const socialContext = repostContext(article);
   const source = socialContext
     ?.replace(/\s*(?:Reposted|(?:已)?转(?:帖|贴)(?:了)?)\s*$/iu, '')
     .trim() || '某用户';
@@ -436,6 +472,8 @@ function getPlainRepostLabel(article: HTMLElement): string {
 }
 
 function extractTweetId(article: HTMLElement): string | null {
+  const framed = frameIdentity(article.closest(POST_FRAME_SELECTOR));
+  if (framed) return framed.tweetId;
   for (const link of article.querySelectorAll<HTMLAnchorElement>('a[href*="/status/"]')) {
     if (link.closest('article') !== article) {
       continue;

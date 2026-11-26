@@ -3,6 +3,7 @@ import {
   normalizeHandle,
 } from '../../features/user-notes/note-model';
 import type { NoteSurface } from '../../features/user-notes/UserNote';
+import { frameIdentity, POST_FRAME_SELECTOR } from './post-frame';
 
 export interface XNoteSurfaceTarget {
   anchor: HTMLElement;
@@ -120,7 +121,8 @@ export function extractDisplayNameFromElement(
   for (const link of links) {
     if (
       !linkReferencesHandle(link, normalizedHandle) ||
-      handleFromExactText(link) === normalizedHandle
+      handleFromExactText(link) === normalizedHandle ||
+      identityText(link).trim().toLowerCase() === `@${normalizedHandle}`
     ) {
       continue;
     }
@@ -213,16 +215,26 @@ function findProfileTarget(root: ParentNode, url: URL): XNoteSurfaceTarget | nul
 
 function findHoverCardTargets(root: ParentNode): XNoteSurfaceTarget[] {
   const targets: XNoteSurfaceTarget[] = [];
-  const cards = root.querySelectorAll<HTMLElement>('[data-testid="HoverCard"]');
+  const cards = root.querySelectorAll<HTMLElement>(
+    '[data-testid="HoverCard"], [data-base-ui-portal] [data-base-ui-focusable][data-open]',
+  );
 
   for (const card of cards) {
-    const handle = extractHandleFromElement(card);
+    const semantic = !card.matches('[data-testid="HoverCard"]');
+    const handleLink = Array.from(card.querySelectorAll<HTMLAnchorElement>('a[href]')).find(link => {
+      const handle = handleFromExactText(link);
+      return handle && tweetLinkHandle(link, 'profile') === handle;
+    });
+    const handle = semantic
+      ? handleLink && handleFromExactText(handleLink)
+      : extractHandleFromElement(card);
     if (!handle) {
       continue;
     }
+    if (semantic && !card.querySelector(`a[href="/${handle}/following" i]`)) continue;
 
     const userName = card.querySelector<HTMLElement>('[data-testid="UserName"]');
-    const exactHandleLink = Array.from(card.querySelectorAll<HTMLAnchorElement>('a[href]')).find(
+    const exactHandleLink = handleLink ?? Array.from(card.querySelectorAll<HTMLAnchorElement>('a[href]')).find(
       (link) => handleFromExactText(link) === handle,
     );
     const anchor = userName ?? exactHandleLink?.parentElement;
@@ -414,6 +426,24 @@ function findTweetTargets(root: ParentNode, url: URL): XNoteSurfaceTarget[] {
     }
   }
 
+  // The semantic timeline puts the time link in a sibling of the author's
+  // hover trigger. An embedded quote owns its own frame and permalink.
+  for (const identity of root.querySelectorAll<HTMLElement>('article [data-anchor-to-hovered-child]')) {
+    const frame = identity.closest(POST_FRAME_SELECTOR);
+    const author = frameIdentity(frame);
+    const row = identity.parentElement;
+    const time = identity.nextElementSibling?.querySelector<HTMLAnchorElement>('a[href]');
+    if (!author || !row || !time || time.getAttribute('href') !== frame?.getAttribute('data-href')) {
+      continue;
+    }
+    const handleMatches = Array.from(identity.querySelectorAll<HTMLAnchorElement>('a[href]'))
+      .some(link => tweetLinkHandle(link, 'profile') === author.handle && handleFromExactText(link) === author.handle);
+    if (!handleMatches) continue;
+    targets.push({
+      anchor: time, inlineContainer: row, handle: author.handle,
+      displayName: extractDisplayNameFromElement(identity, author.handle), surface: 'tweet',
+    });
+  }
   return targets;
 }
 

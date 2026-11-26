@@ -23,12 +23,14 @@ export type MountXImageDownloadControl = (
   resolveTarget: () => XImageDownloadTarget | null,
 ) => MountedXImageDownloadControl;
 
+const PHOTO_SELECTOR = '[data-testid="tweetPhoto"], article a[data-engagement-action="media"][href*="/photo/"]';
+
 export function readXImageDownloadTarget(
   anchor: HTMLElement,
   pageUrl: URL = new URL(window.location.href),
 ): XImageDownloadTarget | null {
   if (
-    !anchor.matches('[data-testid="tweetPhoto"]') ||
+    !anchor.matches(PHOTO_SELECTOR) ||
     anchor.closest('[data-testid="videoPlayer"]') ||
     anchor.querySelector(
       'video, [data-testid="videoPlayer"], [data-testid="playButton"]',
@@ -52,6 +54,8 @@ export function readXImageDownloadTarget(
   if (route?.kind !== 'photo') {
     route = null;
   }
+  if (anchor.matches('a[data-engagement-action="media"]') &&
+      (!route || anchor.querySelector('[data-testid="tweetPhoto"]'))) return null;
   if (!route && anchor.closest('[role="dialog"]') && !anchor.closest('article')) {
     const viewerRoute = parseXMediaRoute(pageUrl);
     route = viewerRoute?.kind === 'photo' ? viewerRoute : null;
@@ -74,7 +78,7 @@ export function findXImageDownloadTargets(
   root: ParentNode = document,
   pageUrl: URL = new URL(window.location.href),
 ): XImageDownloadTarget[] {
-  return Array.from(root.querySelectorAll<HTMLElement>('[data-testid="tweetPhoto"]'))
+  return Array.from(root.querySelectorAll<HTMLElement>(PHOTO_SELECTOR))
     .flatMap((anchor) => {
       const target = readXImageDownloadTarget(anchor, pageUrl);
       return target ? [target] : [];

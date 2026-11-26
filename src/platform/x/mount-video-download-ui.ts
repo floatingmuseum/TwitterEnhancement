@@ -106,6 +106,7 @@ export function mountXVideoDownloadUi(
   updateAppearance();
 
   return {
+    isConnected: () => host.isConnected && host.parentElement === target.anchor,
     updateAppearance,
     destroy() {
       if (resettingState !== null) {

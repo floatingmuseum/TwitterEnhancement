@@ -180,3 +180,43 @@ describe('promoted tweet detection', () => {
     expect(isPromotedTweetArticle(article.parentElement!)).toBe(false);
   });
 });
+
+describe('semantic timeline promotion cards', () => {
+  const destination = 'https://attio.com/product?twclid=sample';
+  const footer = `<a target="_blank" href="${destination}">
+    <div class="text-subtext2 line-clamp-1">来自 attio.com 的广告</div></a>`;
+  const photo = `<a target="_blank" href="${destination}"><div style="aspect-ratio: 1 / 1">
+    <img alt="卡片图像"></div></a>`;
+  const player = '<div style="aspect-ratio: 16 / 9"><div data-press-control><img alt="视频缩略图"></div></div>';
+  const cta = `<a target="_blank" href="${destination}"><div><div>Ad from attio.com</div>
+    <span data-slot="xds-button">Learn more</span></div></a>`;
+
+  function render(attachment: string, timestamp = '') {
+    document.body.innerHTML = `<article><div><div><div data-anchor-to-hovered-child>
+      <a href="/attio">@attio</a></div>${timestamp}</div>
+      <div><button data-slot="xds-menu-trigger">更多</button></div></div>
+      <div>${attachment}</div></article>`;
+    return document.querySelector('article')!;
+  }
+
+  it.each([photo + footer, player + footer, player + cta, player.replace('<div data-press-control><img alt="视频缩略图"></div>', '<video></video>') + cta])(
+    'detects the native image or video card independently of playback and footer language', card => {
+      expect(isPromotedTweetArticle(render(card))).toBe(true);
+    },
+  );
+
+  it.each([
+    footer,
+    photo + footer.replace('?twclid=sample', '?source=twclid=sample'),
+    photo + footer.replace('?twclid=sample', '#twclid=sample'),
+    `<div data-testid="tweetText">${photo}${footer}</div>`,
+    `<div data-slot="embedded-tweet-frame" role="link"><article>${photo}${footer}</article></div>`,
+  ])('ignores shared links, ordinary source captions, and quoted promotions', card => {
+    expect(isPromotedTweetArticle(render(card))).toBe(false);
+  });
+
+  it('does not classify an ordinary post with a timestamp and a shared tracked card as promoted', () => {
+    const time = '<span><a href="/attio/status/101">1小时</a></span>';
+    expect(isPromotedTweetArticle(render(photo + footer, time))).toBe(false);
+  });
+});

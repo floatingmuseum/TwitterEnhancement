@@ -7,7 +7,8 @@ export default defineConfig({
   manifest: {
     name: 'Twitter Enhancement',
     description: '为 X / Twitter 提供本地私人备注、时间线过滤、媒体连续浏览、原图和视频下载。',
-    permissions: ['storage', 'downloads'],
+    permissions: ['storage', 'downloads', 'scripting'],
+    host_permissions: ['https://x.com/*', 'https://twitter.com/*'],
     icons: {
       16: 'icon/16.png',
       32: 'icon/32.png',

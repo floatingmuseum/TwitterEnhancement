@@ -1,10 +1,11 @@
+import { browser } from 'wxt/browser';
 import { findXNoteSurfaceTargets } from '../../src/platform/x/dom-adapter';
 import { EXTERNAL_VIDEO_DATA_EVENT } from '../../src/platform/x/external-video-data-bridge';
 import { createXExternalVideoManager } from '../../src/platform/x/external-video-manager';
 import { createXImageDownloadManager } from '../../src/platform/x/image-download-manager';
-import { createXInterfaceLayoutManager } from '../../src/platform/x/interface-layout-manager';
 import { createXInterfaceModuleManager } from '../../src/platform/x/interface-module-manager';
 import { createXRepostTimelineManager } from '../../src/platform/x/list-repost-manager';
+import { INSTALL_TIMELINE_ROW_STYLE } from '../../src/platform/x/timeline-style-message';
 import { createXMediaNavigationManager } from '../../src/platform/x/media-navigation-manager';
 import { mountXRepostTimelineUi } from '../../src/platform/x/mount-list-repost-ui';
 import { mountXImageDownloadUi } from '../../src/platform/x/mount-image-download-ui';
@@ -15,7 +16,6 @@ import { mountXVideoDownloadUi } from '../../src/platform/x/mount-video-download
 import { createXSurfaceMountManager } from '../../src/platform/x/surface-mount-manager';
 import { readCapturedTwitterVideoUrls } from '../../src/platform/x/twitter-video-data-bridge';
 import { createXVideoDownloadManager } from '../../src/platform/x/video-download-manager';
-import { interfaceLayoutPreferenceRepository } from '../../src/shared/storage/browser-interface-layout-preference-repository';
 import { interfaceModuleVisibilityRepository } from '../../src/shared/storage/browser-interface-module-visibility-repository';
 import { listRepostPreferenceRepository } from '../../src/shared/storage/browser-list-repost-preference-repository';
 import { userNoteRepository } from '../../src/shared/storage/browser-user-note-repository';
@@ -24,12 +24,10 @@ export default defineContentScript({
   matches: ['https://x.com/*', 'https://twitter.com/*'],
   runAt: 'document_idle',
   main(ctx) {
+    void browser.runtime.sendMessage(INSTALL_TIMELINE_ROW_STYLE).catch(() => {});
     const manager = createXSurfaceMountManager((target) => mountXNoteUi(target, userNoteRepository));
     const interfaceModuleManager = createXInterfaceModuleManager(
       interfaceModuleVisibilityRepository,
-    );
-    const interfaceLayoutManager = createXInterfaceLayoutManager(
-      interfaceLayoutPreferenceRepository,
     );
     const repostTimelineManager = createXRepostTimelineManager(
       (target) => mountXRepostTimelineUi(target, listRepostPreferenceRepository),
@@ -62,7 +60,6 @@ export default defineContentScript({
       }
       manager.sync(findXNoteSurfaceTargets());
       interfaceModuleManager.sync();
-      interfaceLayoutManager.sync();
       repostTimelineManager.sync();
       mediaNavigationManager.sync();
       videoDownloadManager.sync();
@@ -77,11 +74,11 @@ export default defineContentScript({
     };
 
     const observer = new MutationObserver(scheduleScan);
-    observer.observe(document.body, {
+    observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['href', 'src', 'srcset', 'title', 'data-expanded-url'],
+      attributeFilter: ['href', 'src', 'srcset', 'poster', 'title', 'data-href', 'data-open', 'data-expanded-url', 'data-theme'],
       characterData: true,
     });
 
@@ -106,7 +103,6 @@ export default defineContentScript({
       }
       manager.destroyAll();
       interfaceModuleManager.destroy();
-      interfaceLayoutManager.destroy();
       repostTimelineManager.destroy();
       mediaNavigationManager.destroy();
       videoDownloadManager.destroy();

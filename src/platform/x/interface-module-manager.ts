@@ -93,11 +93,11 @@ function closestSidebarModule(
   sidebar: HTMLElement,
 ): HTMLElement {
   const aside = marker.closest<HTMLElement>('aside');
-  if (aside && sidebar.contains(aside)) {
+  if (aside && aside !== sidebar && sidebar.contains(aside)) {
     return aside;
   }
 
-  const region = marker.closest<HTMLElement>('[role="region"]');
+  const region = marker.closest<HTMLElement>('[role="region"], [role="complementary"], section');
   if (region && region !== sidebar && sidebar.contains(region)) {
     return region;
   }
@@ -221,7 +221,7 @@ export function findXInterfaceModuleTargets(
 ): XInterfaceModuleTarget[] {
   const targets: XInterfaceModuleTarget[] = [];
   const seen = new Set<HTMLElement>();
-  const sidebar = root.querySelector<HTMLElement>('[data-testid="sidebarColumn"]');
+  const sidebar = root.querySelector<HTMLElement>('[data-testid="sidebarColumn"], main + aside');
 
   if (sidebar) {
     addTarget(targets, seen, 'sidebarSearch', findSearchTarget(sidebar));

@@ -1,0 +1,6 @@
+/* X keeps its estimated item size for a zero-height virtual row. Keep its
+   measuring box alive only while the entire contents are filtered. */
+main section[aria-labelledby] [id^="urt:home:"] > ul > li[data-index]:not([hidden], [aria-hidden="true"]):has(> [data-te-fully-hidden]:only-child) {
+  display: block !important;
+  min-height: 1px !important;
+}

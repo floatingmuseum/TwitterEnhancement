@@ -1,9 +1,10 @@
 const PROMOTED_MARKER_SELECTOR = '[data-testid="promotedIndicator"]';
-const IDENTITY_SELECTOR = '[data-testid="User-Name"], [data-testid="UserName"]';
+const IDENTITY_SELECTOR = '[data-testid="User-Name"], [data-testid="UserName"], [data-anchor-to-hovered-child]';
 const CONTENT_SELECTOR = [
   '[data-testid="tweetText"]',
   '[data-testid="card.wrapper"]',
   '[data-testid="quoteTweet"]',
+  '[data-slot="embedded-tweet-frame"]',
   '[data-testid="tweetPhoto"]',
   '[data-testid="videoPlayer"]',
 ].join(', ');
@@ -44,6 +45,23 @@ function isLabelCandidate(element: HTMLElement, article: HTMLElement): boolean {
     belongsToArticle(element, article) &&
     !element.closest(`${IDENTITY_SELECTOR}, [data-testid="caret"]`)
   );
+}
+
+function hasTrackedMediaCard(article: HTMLElement): boolean {
+  // X attaches the click ID to the card's own footer, including a video CTA.
+  // A pasted tracking link or a quote belongs to a different surface.
+  for (const footer of article.querySelectorAll<HTMLAnchorElement>('a[target="_blank"][href*="twclid="]')) {
+    const media = footer.previousElementSibling;
+    if (!media || !belongsToArticle(footer, article) ||
+        !/^https?:$/.test(footer.protocol) || !new URLSearchParams(footer.search).get('twclid')) continue;
+
+    if (media instanceof HTMLAnchorElement && media.target === '_blank' &&
+        media.href === footer.href && media.querySelector(':scope > [style*="aspect-ratio"]')) return true;
+
+    if (media.matches('[style*="aspect-ratio"]') &&
+        media.querySelector('video, [data-press-control], img[src*="_video_thumb/"]')) return true;
+  }
+  return false;
 }
 
 function hasPromotedBannerBefore(header: HTMLElement, article: HTMLElement): boolean {
@@ -101,6 +119,40 @@ export function isPromotedTweetArticle(article: HTMLElement): boolean {
 
   const identities = Array.from(article.querySelectorAll<HTMLElement>(IDENTITY_SELECTOR))
     .filter((identity) => belongsToArticle(identity, article));
+
+  for (const identity of identities) {
+    if (!identity.hasAttribute('data-anchor-to-hovered-child')) continue;
+    const row = identity.parentElement;
+    const header = row?.parentElement;
+    const controls = row?.nextElementSibling;
+    if (
+      !row || !header || header === article ||
+      !controls?.querySelector(':scope > button[data-slot="xds-menu-trigger"]')
+    ) continue;
+    // Some promoted headers replace the timestamp with a disclosure linking
+    // to the advertiser's profile beside the menu.
+    const disclosure = controls.querySelector<HTMLAnchorElement>(':scope > a[href]');
+    if (
+      disclosure && /^\/[a-z0-9_]{1,15}\/?$/i.test(disclosure.getAttribute('href') ?? '') &&
+      isLabelCandidate(disclosure, article) &&
+      AD_LABEL_PATTERN.test(disclosure.textContent?.trim() ?? '') &&
+      Array.from(identity.querySelectorAll<HTMLAnchorElement>('a[href]'))
+        .some(link => link.pathname === disclosure.pathname && link.origin === disclosure.origin)
+    ) return true;
+    if (!identity.nextElementSibling?.querySelector('a[href*="/status/"]')) {
+      if (hasTrackedMediaCard(article)) return true;
+      continue;
+    }
+    if (hasPromotedBannerBefore(header, article)) return true;
+    for (const part of [row, controls]) {
+      for (const label of part.querySelectorAll<HTMLElement>('span, div')) {
+        if (
+          label.childElementCount === 0 && !label.closest('a, button, [role="button"]') &&
+          isLabelCandidate(label, article) && AD_LABEL_PATTERN.test(label.textContent?.trim() ?? '')
+        ) return true;
+      }
+    }
+  }
 
   for (const caret of article.querySelectorAll<HTMLElement>('[data-testid="caret"]')) {
     if (!belongsToArticle(caret, article)) {

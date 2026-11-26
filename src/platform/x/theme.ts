@@ -18,6 +18,8 @@ function parseVisibleRgb(color: string): [number, number, number] | null {
 }
 
 export function isDarkXPage(): boolean {
+  const theme = document.documentElement.dataset.theme;
+  if (theme === 'dark' || theme === 'light') return theme === 'dark';
   const colorScheme = getComputedStyle(document.documentElement).colorScheme;
   if (colorScheme.includes('dark') && !colorScheme.includes('light')) {
     return true;

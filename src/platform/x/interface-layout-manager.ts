@@ -4,6 +4,8 @@ import type {
   InterfaceLayoutPreferenceRepository,
 } from '../../features/interface-modules/interface-layout-preference';
 import { DEFAULT_INTERFACE_LAYOUT_PREFERENCE } from '../../features/interface-modules/interface-layout-preference';
+import { POST_FRAME_SELECTOR } from './post-frame';
+import './interface-layout.css';
 
 interface InlineStyleValue {
   priority: string;
@@ -26,8 +28,12 @@ interface MediaCarouselSize {
 }
 
 const LAYOUT_MARKER = 'data-twitter-enhancement-layout';
+export const INITIAL_WIDE_LAYOUT_ATTRIBUTE = 'data-te-initial-wide-layout';
+const LEFT_NAVIGATION_COLLAPSED = 'data-te-left-navigation-collapsed';
 const LEFT_CONTROL_HOST = 'data-twitter-enhancement-left-layout-control';
 const RIGHT_CONTROL_HOST = 'data-twitter-enhancement-right-layout-control';
+// X's 55px floating buttons sit 20px from the viewport edge.
+const RIGHT_CONTROL_RAIL_WIDTH = 80;
 
 const CHEVRON_LEFT_PATH =
   'M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z';
@@ -66,8 +72,17 @@ const SIDEBAR_HIDDEN_STYLES = {
   width: '0px',
 } as const;
 
+const LEGACY_MEDIA_SELECTOR =
+  '[data-testid="tweetPhoto"], [data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid="card.wrapper"], [data-testid="article-cover-image"], video';
+const SEMANTIC_MEDIA_SELECTOR =
+  'a[data-engagement-action="media"], [data-press-control], a[class~="group/article-card"], a[target="_blank"]:has(> [style*="aspect-ratio"]), [style*="aspect-ratio"]:has(+ a[target="_blank"])';
+const SEMANTIC_TIMELINE = 'section [id^="urt:"]';
+const POST_IMAGE_SELECTOR = 'img[src*="/card_img/"], img[src*="_video_thumb/"], img[src*="pbs.twimg.com/media/"]';
+const CAROUSEL_GROUP = '[class~="group/carousel"]';
+const CAROUSEL_LIST = `[data-testid="ScrollSnap-List"], ${CAROUSEL_GROUP} .snap-x`;
+const FULL_SIZE_MEDIA_CONTEXT = '[role="dialog"], [data-testid="twitterArticleReadView"], [data-article-part="cover"], [data-article-part="body"]';
 const CAROUSEL_SLIDE_MEDIA_SELECTOR =
-  '[data-testid="tweetPhoto"], [data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid="playButton"], video';
+  '[data-testid="tweetPhoto"], [data-testid="videoPlayer"], [data-testid="videoComponent"], [data-testid="playButton"], video, a[data-engagement-action="media"], [data-press-control], img[src*="_video_thumb/"]';
 
 function isExternalMediaBoundary(
   boundary: Element,
@@ -87,17 +102,48 @@ function isExternalMediaBoundary(
   return true;
 }
 
+function findSemanticMediaTarget(media: HTMLElement, article: HTMLElement): HTMLElement | null {
+  const carousel = media.closest<HTMLElement>(CAROUSEL_GROUP);
+  if (carousel && article.contains(carousel)) {
+    const spacer = carousel.closest<HTMLElement>('[style*="padding-bottom"]');
+    return spacer && article.contains(spacer) ? spacer : carousel;
+  }
+
+  const link = media.closest<HTMLElement>('a[target="_blank"], a[class~="group/article-card"]');
+  // Playing videos have a second ratio box inside the outer attachment.
+  const player = media.closest<HTMLElement>('[data-press-control]');
+  const ratio = player?.parentElement?.closest<HTMLElement>('[style*="aspect-ratio"]')
+    ?? media.closest<HTMLElement>('[style*="aspect-ratio"]');
+  const visual = link ?? ratio ?? player ?? (media.matches('video') ? media : null);
+  if (!visual || !article.contains(visual)) return null;
+
+  // A sponsored image or player and its separate call-to-action form one card.
+  const caption = visual.nextElementSibling;
+  const card = visual.parentElement;
+  if (card && card !== article && card.childElementCount === 2 &&
+      caption?.matches('a[target="_blank"][href]') &&
+      (!link || link.getAttribute('href') === caption.getAttribute('href') || caption.querySelector('[data-slot="xds-button"]'))) {
+    return card;
+  }
+  return visual;
+}
+
 function findTweetMediaTargets(primary: HTMLElement): HTMLElement[] {
   const targets = new Set<HTMLElement>();
-  for (const media of primary.querySelectorAll<HTMLElement>(
-    'article [data-testid="tweetPhoto"], article [data-testid="videoPlayer"], article [data-testid="videoComponent"], article [data-testid="card.wrapper"], article [data-testid="article-cover-image"], article video',
-  )) {
-    // X articles contain tweetPhoto nodes in both their cover and rich text.
-    // Only the timeline preview is an attachment; the reader uses the full column.
-    if (media.closest('[role="dialog"], [data-testid="twitterArticleReadView"]')) {
-      continue;
-    }
+  const selector = `article :is(${LEGACY_MEDIA_SELECTOR}, ${SEMANTIC_MEDIA_SELECTOR}, ${POST_IMAGE_SELECTOR})`;
+  for (const media of primary.querySelectorAll<HTMLElement>(selector)) {
     const article = media.closest('article');
+    if (!article || media.closest(FULL_SIZE_MEDIA_CONTEXT)) continue;
+    // The focused post in a conversation has no clickable status frame.
+    if (media.closest(`${POST_FRAME_SELECTOR}, ${SEMANTIC_TIMELINE}`) || media.matches(SEMANTIC_MEDIA_SELECTOR) ||
+        media.matches('img[src*="/card_img/"]')) {
+      const target = findSemanticMediaTarget(media, article);
+      if (target) {
+        targets.add(target);
+        continue;
+      }
+    }
+    if (!media.matches(LEGACY_MEDIA_SELECTOR)) continue;
     let target = media;
     // Constrain the whole attachment, including grids and aspect-ratio spacers.
     // Stop before the tweet body (or a quoted tweet's body), so text can expand.
@@ -127,7 +173,7 @@ function isCarouselMediaSlide(slide: Element): boolean {
 }
 
 function findMediaCarouselSpacer(target: HTMLElement): HTMLElement | null {
-  const lists = target.querySelectorAll<HTMLElement>('[data-testid="ScrollSnap-List"]');
+  const lists = target.querySelectorAll<HTMLElement>(CAROUSEL_LIST);
   const list = lists.item(0);
   if (
     lists.length !== 1 ||
@@ -151,7 +197,10 @@ function findMediaCarouselSpacer(target: HTMLElement): HTMLElement | null {
 }
 
 function findTimelineContentTargets(primary: HTMLElement): HTMLElement[] {
-  const targets = new Set<HTMLElement>();
+  // Home, history, profiles and conversations share the same capped list wrapper.
+  const targets = new Set(primary.querySelectorAll<HTMLElement>(
+    `${SEMANTIC_TIMELINE}:has(> ul):not(article *, aside *, [role="dialog"] *)`,
+  ));
   for (const cell of primary.querySelectorAll<HTMLElement>(
     '[data-testid="cellInnerDiv"]',
   )) {
@@ -223,6 +272,8 @@ function findHeaderAncestors(
 }
 
 function isDarkDocument(document: Document): boolean {
+  const theme = document.documentElement.dataset.theme;
+  if (theme === 'dark' || theme === 'light') return theme === 'dark';
   const color = document.defaultView
     ?.getComputedStyle(document.body)
     .backgroundColor.match(/[\d.]+/gu)
@@ -282,7 +333,7 @@ export function createXInterfaceLayoutManager(
   let mediaWidths = new WeakMap<HTMLElement, number>();
   let carouselSizes = new WeakMap<HTMLElement, MediaCarouselSize>();
   let destroyed = false;
-  let preferenceRevision = 0;
+  let changesBeforeLoad: InterfaceLayoutChange | null = {};
 
   function restoreElement(
     states: Map<HTMLElement, StyledElementState>,
@@ -431,20 +482,21 @@ export function createXInterfaceLayoutManager(
     );
   }
 
-  function renderLeftControl(navigation: HTMLElement, compact: boolean) {
+  function renderLeftControl(navigation: HTMLElement, compact: boolean, nativeRail = false) {
     const document = navigation.ownerDocument;
+    if (document.readyState === 'loading') return;
     if (!leftHost?.isConnected) {
       leftHost = document.createElement('div');
       leftHost.setAttribute(LEFT_CONTROL_HOST, '');
       leftHost.attachShadow({ mode: 'open' });
-      navigation.insertAdjacentElement('afterend', leftHost);
     }
+    if (navigation.nextElementSibling !== leftHost) navigation.insertAdjacentElement('afterend', leftHost);
     const label = compact ? '展开左侧导航' : '收起左侧导航';
-    leftHost.style.width = compact ? '72px' : '233px';
+    leftHost.style.width = nativeRail ? '100%' : compact ? '72px' : '233px';
     leftHost.style.margin = '4px 0';
     updateHostTheme(leftHost, document);
     const shadow = leftHost.shadowRoot;
-    const state = compact ? 'compact' : 'expanded';
+    const state = `${nativeRail ? 'rail-' : ''}${compact ? 'compact' : 'expanded'}`;
     if (!shadow || leftHost.dataset.state === state) {
       return;
     }
@@ -456,7 +508,7 @@ export function createXInterfaceLayoutManager(
           ${chevronIcon(!compact)}
         </button>
         ${
-          compact
+          compact && !nativeRail
             ? `<a class="compose" href="/compose/post" aria-label="发帖" title="发帖">${composeIcon()}</a>`
             : ''
         }
@@ -469,6 +521,7 @@ export function createXInterfaceLayoutManager(
 
   function renderRightControl(sidebar: HTMLElement) {
     const document = sidebar.ownerDocument;
+    if (document.readyState === 'loading') return;
     const columns = sidebar.parentElement;
     if (!columns) {
       rightHost = removeHost(rightHost);
@@ -486,15 +539,14 @@ export function createXInterfaceLayoutManager(
         '[data-testid="GrokDrawerHeader"], [data-testid="chat-drawer-main"]',
       ),
     ).find((button) => button.getBoundingClientRect().width > 0);
-    if (railButton) {
+    if (railButton || sidebar.matches('main + aside')) {
       if (rightHost.parentElement !== document.body) {
         document.body.append(rightHost);
       }
-      const railRect = railButton.getBoundingClientRect();
-      const railCenter = railRect.left + railRect.width / 2;
+      const railRect = railButton?.getBoundingClientRect();
       rightHost.style.cssText = [
         'position: fixed',
-        `left: ${railCenter - 22}px`,
+        railRect ? `left: ${railRect.left + railRect.width / 2 - 22}px` : 'right: 25.5px',
         'top: 92px',
         'z-index: 2147483000',
         'width: 44px',
@@ -535,6 +587,12 @@ export function createXInterfaceLayoutManager(
   }
 
   function syncLeft(root: ParentNode) {
+    const railNavigation = root.querySelector<HTMLElement>('[data-rail-overflow] > nav');
+    if (railNavigation?.querySelector('a[href="/home"]')) {
+      restoreAll(leftStyledElements);
+      renderLeftControl(railNavigation, !preference.leftNavigationExpanded, true);
+      return;
+    }
     const header = root.querySelector<HTMLElement>('header[role="banner"]');
     const navigation = header?.querySelector<HTMLElement>('nav[role="navigation"]');
     if (!header || !navigation) {
@@ -651,19 +709,56 @@ export function createXInterfaceLayoutManager(
     restoreStale(leftStyledElements, current);
   }
 
+  function expandDesktopGrid(grid: HTMLElement, current: Set<HTMLElement>) {
+    const { leftNavigationExpanded, rightSidebarVisible } = preference;
+    const page = grid.parentElement?.parentElement;
+    let outerGutter = 0;
+    let controlRailWidth = 0;
+    // The capped page wraps a row containing the navigation and main/aside grid.
+    if (page?.parentElement && page !== grid.ownerDocument.body &&
+        grid.previousElementSibling?.querySelector('[data-rail-overflow]')) {
+      const maxWidth = getComputedStyle(page).maxWidth;
+      if (maxWidth.endsWith('px')) {
+        outerGutter = Math.max(0, (page.parentElement.clientWidth - parseFloat(maxWidth)) / 2);
+      }
+      const keepGutter = leftNavigationExpanded || rightSidebarVisible;
+      current.add(page);
+      // Raising the minimum keeps X's responsive max-width readable on resize.
+      applyStyles(rightStyledElements, page, 'desktop-page', {
+        'min-width': keepGutter ? `calc(100% - ${outerGutter}px)` : '100%',
+        'margin-inline-start': leftNavigationExpanded ? 'auto' : '0px',
+        'margin-inline-end': rightSidebarVisible ? 'auto' : '0px',
+      });
+      controlRailWidth = RIGHT_CONTROL_RAIL_WIDTH;
+    }
+    current.add(grid);
+    applyStyles(rightStyledElements, grid, 'right-column-wrapper', {
+      // A visible sidebar keeps its native width. Its neighbor receives both
+      // the outer gutter and the 184px released by collapsing a wide rail.
+      'grid-template-columns': rightSidebarVisible
+        ? `calc(var(--x-main-column-width) + 184px * var(--x-sidebar-wide, 0) + ${outerGutter}px) minmax(0, 1fr)`
+        : `minmax(0, 1fr) ${controlRailWidth}px`,
+    });
+  }
+
   function syncRight(root: ParentNode) {
-    const primary = root.querySelector<HTMLElement>(
-      '[data-testid="primaryColumn"]',
-    );
     const sidebar = root.querySelector<HTMLElement>(
-      '[data-testid="sidebarColumn"]',
+      '[data-testid="sidebarColumn"], main + aside',
     );
+    const gridMain = sidebar?.previousElementSibling;
+    const semanticGrid = gridMain instanceof HTMLElement && gridMain.matches('main');
+    const primary = semanticGrid ? gridMain : root.querySelector<HTMLElement>('[data-testid="primaryColumn"]');
     const view = sidebar?.ownerDocument.defaultView;
+    // At document_start the markup can precede X's render-blocking CSS.
+    // Measuring a plain block here would cache viewport-wide media sizes.
+    const grid = primary?.parentElement;
     if (
       !primary ||
       !sidebar ||
-      primary.parentElement !== sidebar.parentElement ||
+      !grid ||
+      grid !== sidebar.parentElement ||
       !view ||
+      (semanticGrid && !view.getComputedStyle(grid).display.endsWith('grid')) ||
       view.getComputedStyle(sidebar).display === 'none'
     ) {
       restoreAll(rightStyledElements);
@@ -679,6 +774,9 @@ export function createXInterfaceLayoutManager(
     const shouldExpandTimeline =
       !preference.leftNavigationExpanded || !preference.rightSidebarVisible;
     if (shouldExpandTimeline) {
+      if (semanticGrid) {
+        expandDesktopGrid(grid, current);
+      }
       if (normalPrimaryWidth === null) {
         // A hidden column may have had no measurable native width last time.
         restoreElement(rightStyledElements, primary);
@@ -689,6 +787,7 @@ export function createXInterfaceLayoutManager(
         mediaWidths = new WeakMap();
         carouselSizes = new WeakMap();
       }
+      const timelineContents = findTimelineContentTargets(primary);
       const mediaTargets = findTweetMediaTargets(primary);
       const carouselSpacers = new Map(
         mediaTargets.map((target) => [target, findMediaCarouselSpacer(target)]),
@@ -702,7 +801,7 @@ export function createXInterfaceLayoutManager(
       if (normalPrimaryWidth !== null && unmeasuredTargets.length > 0) {
         // Lazy-loaded tweets arrive after the column has expanded. Measure all
         // new attachments in one native-width layout, then restore before paint.
-        for (const content of findTimelineContentTargets(primary)) {
+        for (const content of timelineContents) {
           restoreElement(rightStyledElements, content);
         }
         const originalStyle = primary.getAttribute('style');
@@ -767,7 +866,9 @@ export function createXInterfaceLayoutManager(
         rightStyledElements,
         primary,
         'right-primary',
-        PRIMARY_EXPANDED_STYLES,
+        // X centers the grid item with auto inline margins. An auto width
+        // would shrink to its contents instead of filling the assigned track.
+        semanticGrid ? COLUMN_EXPANDED_STYLES : PRIMARY_EXPANDED_STYLES,
       );
       for (const [index, column] of findColumnExpansionTargets(
         primary,
@@ -787,7 +888,7 @@ export function createXInterfaceLayoutManager(
             : COLUMN_EXPANDED_STYLES,
         );
       }
-      for (const content of findTimelineContentTargets(primary)) {
+      for (const content of timelineContents) {
         current.add(content);
         applyStyles(
           rightStyledElements,
@@ -817,6 +918,14 @@ export function createXInterfaceLayoutManager(
     if (destroyed) {
       return;
     }
+    const html = document.documentElement;
+    if (html.hasAttribute(INITIAL_WIDE_LAYOUT_ATTRIBUTE)) {
+      if (changesBeforeLoad) {
+        preference = { leftNavigationExpanded: false, rightSidebarVisible: false, ...changesBeforeLoad };
+      }
+      html.removeAttribute(INITIAL_WIDE_LAYOUT_ATTRIBUTE);
+    }
+    html.toggleAttribute(LEFT_NAVIGATION_COLLAPSED, !preference.leftNavigationExpanded);
     captureNormalDesktopLayout(root);
     syncLeft(root);
     syncRight(root);
@@ -828,24 +937,27 @@ export function createXInterfaceLayoutManager(
   }
 
   const unsubscribe = repository.subscribe((change) => {
-    preferenceRevision += 1;
+    if (changesBeforeLoad) Object.assign(changesBeforeLoad, change);
     applyPreference(change);
   });
-  const loadRevision = preferenceRevision;
   void repository
     .getPreference()
     .then((storedPreference) => {
-      if (!destroyed && preferenceRevision === loadRevision) {
-        applyPreference(storedPreference);
+      if (!destroyed) {
+        const currentPreference = { ...storedPreference, ...changesBeforeLoad };
+        changesBeforeLoad = null;
+        applyPreference(currentPreference);
       }
     })
     .catch(() => {
-      // Keep X's default layout when storage is unavailable.
+      // Keep the document's startup layout when storage is unavailable.
     });
 
   function destroy() {
     destroyed = true;
     unsubscribe();
+    document.documentElement.removeAttribute(INITIAL_WIDE_LAYOUT_ATTRIBUTE);
+    document.documentElement.removeAttribute(LEFT_NAVIGATION_COLLAPSED);
     restoreAll(leftStyledElements);
     restoreAll(rightStyledElements);
     leftHost = removeHost(leftHost);

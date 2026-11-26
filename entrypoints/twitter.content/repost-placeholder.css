@@ -27,6 +27,7 @@
   width: 100%;
   align-items: center;
   border: 0;
+  border-block: 1px solid var(--te-placeholder-line);
   color: var(--te-placeholder-muted);
   background: transparent;
   cursor: pointer;

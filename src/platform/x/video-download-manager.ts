@@ -4,6 +4,7 @@ import {
   twitterMediaIdentityKey,
   type TwitterMediaIdentity,
 } from '../../features/video-download/video-download';
+import { frameIdentity, POST_FRAME_SELECTOR } from './post-frame';
 
 export interface XVideoDownloadTarget {
   anchor: HTMLElement;
@@ -15,6 +16,7 @@ export interface XVideoDownloadTarget {
 }
 
 export interface MountedXVideoDownloadControl {
+  isConnected?(): boolean;
   updateAppearance(): void;
   destroy(): void;
 }
@@ -70,8 +72,8 @@ function extractTweetIdentity(article: HTMLElement): TweetIdentity {
 function findActionBar(article: HTMLElement): HTMLElement | null {
   for (const group of article.querySelectorAll<HTMLElement>('[role="group"]')) {
     if (
-      group.querySelector(
-        '[data-testid="reply"], [data-testid="retweet"], [data-testid="unretweet"], [data-testid="like"], [data-testid="unlike"]',
+      group.closest('article') === article && group.querySelector(
+        '[data-testid="reply"], [data-testid="retweet"], [data-testid="unretweet"], [data-testid="like"], [data-testid="unlike"], [data-engagement-action="reply"], [data-engagement-action="like"]',
       )
     ) {
       return group;
@@ -91,20 +93,20 @@ export function findXVideoDownloadTargets(
   const targets: XVideoDownloadTarget[] = [];
 
   for (const article of root.querySelectorAll<HTMLElement>('article')) {
-    const videos = Array.from(article.querySelectorAll<HTMLVideoElement>('video'));
-    const hasVideoSurface =
-      videos.length > 0 ||
-      article.querySelector(
-        '[data-testid="videoPlayer"], [data-testid="playButton"]',
-      ) !== null;
-    if (!hasVideoSurface) {
-      continue;
-    }
-
+    const surfaces = article.querySelectorAll<HTMLElement>(
+      'video, img[src*="_video_thumb/"], [data-testid="videoPlayer"], [data-testid="playButton"]',
+    );
+    if (surfaces.length === 0) continue;
     const anchor = findActionBar(article);
-    if (!anchor) {
-      continue;
-    }
+    if (!anchor) continue;
+    const frame = article.closest(POST_FRAME_SELECTOR);
+    const owners = new Set(Array.from(surfaces, media => media.closest(POST_FRAME_SELECTOR)));
+    // A quote has no action bar of its own. Its video can use the outer
+    // controls, but must resolve with the quoted tweet's ID and poster.
+    const owner = owners.has(frame) ? frame : owners.values().next().value;
+    if (!owners.has(frame) && owners.size !== 1) continue;
+    const belongsToOwner = (element: Element) => element.closest(POST_FRAME_SELECTOR) === owner;
+    const videos = Array.from(article.querySelectorAll<HTMLVideoElement>('video')).filter(belongsToOwner);
 
     const identities = new Map<string, TwitterMediaIdentity>();
     const directVideoUrls = new Set<string>();
@@ -126,13 +128,16 @@ export function findXVideoDownloadTargets(
     }
 
     for (const image of article.querySelectorAll<HTMLImageElement>('img[src]')) {
+      if (!belongsToOwner(image)) continue;
       const identity = parseTwitterMediaIdentity(image.currentSrc || image.src);
       if (identity) {
         identities.set(twitterMediaIdentityKey(identity), identity);
       }
     }
 
-    const tweetIdentity = extractTweetIdentity(article);
+    if (identities.size === 0 && videos.length === 0 &&
+      !article.querySelector('[data-testid="videoPlayer"], [data-testid="playButton"]')) continue;
+    const tweetIdentity = frameIdentity(owner ?? null) ?? extractTweetIdentity(article);
     if (identities.size === 0 && !tweetIdentity.tweetId) {
       continue;
     }
@@ -154,6 +159,7 @@ function targetSignature(target: XVideoDownloadTarget): string {
     target.handle,
     target.tweetId,
     ...target.identities.map(twitterMediaIdentityKey),
+    ...target.directVideoUrls,
   ].join('|');
 }
 
@@ -173,7 +179,7 @@ export function createXVideoDownloadManager(
       const signature = targetSignature(target);
       const existing = entries.get(target.anchor);
 
-      if (existing?.signature === signature) {
+      if (existing?.signature === signature && existing.mounted.isConnected?.() !== false) {
         existing.mounted.updateAppearance();
         continue;
       }
