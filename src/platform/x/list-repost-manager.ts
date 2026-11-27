@@ -7,7 +7,7 @@ import {
   type ListRepostPreferences,
 } from '../../features/list-reposts/list-repost-preference';
 import { isPromotedTweetArticle } from './promoted-tweet';
-import { HOME_TIMELINE_LIST } from './home-timeline';
+import { findHomeTimelineList } from './home-timeline';
 import { frameIdentity, POST_FRAME_SELECTOR } from './post-frame';
 import { isDarkXPage } from './theme';
 
@@ -177,8 +177,7 @@ export function findXRepostTimelineTarget(
   }
 
   if (route.surface === 'home') {
-    const lists = root.querySelectorAll<HTMLElement>(HOME_TIMELINE_LIST);
-    const timeline = Array.from(lists).find(list => !list.closest('[hidden], [aria-hidden="true"]'));
+    const timeline = findHomeTimelineList(root);
     if (timeline) {
       return {
         controlAnchor: timeline.closest('section[aria-labelledby]'),

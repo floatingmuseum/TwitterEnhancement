@@ -1,4 +1,5 @@
 import { INTERFACE_LAYOUT_STORAGE_KEYS } from '../src/shared/storage/interface-layout-preference-repository';
+import { createHomeRowHeights } from '../src/platform/x/home-row-heights';
 
 vi.mock('wxt/browser', () => ({ browser: {
   runtime: { sendMessage: async () => true },
@@ -11,7 +12,40 @@ vi.mock('wxt/browser', () => ({ browser: {
   },
 } }));
 
+function observeLayout() {
+  const watched = new Set<Element>();
+  let deliver: (entries: ResizeObserverEntry[]) => void;
+  vi.stubGlobal('ResizeObserver', class implements ResizeObserver {
+    constructor(callback: ResizeObserverCallback) { deliver = entries => callback(entries, this); }
+    observe(target: Element) { watched.add(target); }
+    unobserve(target: Element) { watched.delete(target); }
+    disconnect() { watched.clear(); }
+  });
+  document.adoptedStyleSheets = [];
+  return (target: Element, height: number, width = 1300) => {
+    expect(watched.has(target)).toBe(true);
+    const size = [{ inlineSize: width, blockSize: height }];
+    deliver([{ target, borderBoxSize: size, contentBoxSize: size, devicePixelContentBoxSize: size,
+      contentRect: new DOMRect(0, 0, width, height) }]);
+  };
+}
+
+function reservedHeight(row: Element) {
+  for (const sheet of document.adoptedStyleSheets) {
+    for (const rule of sheet.cssRules) {
+      if (rule instanceof CSSStyleRule && row.matches(rule.selectorText)) return rule.style.height;
+    }
+  }
+  return undefined;
+}
+
+afterEach(() => {
+  Reflect.deleteProperty(document, 'adoptedStyleSheets');
+  vi.unstubAllGlobals();
+});
+
 it('sizes media and filters returning Following rows before the virtual list measures the frame', async () => {
+  const resize = observeLayout();
   const cleanup: Array<() => void> = [];
   const ctx = { isValid: true, addEventListener: vi.fn(), onInvalidated: (fn: () => void) => cleanup.push(fn) };
   vi.stubGlobal('defineContentScript', (entry: { main: (context: typeof ctx) => void }) => entry.main(ctx));
@@ -52,6 +86,22 @@ it('sizes media and filters returning Following rows before the virtual list mea
     expect.soft(media.style.maxWidth).toBe('min(100%, 574px)');
     const post = list.querySelector<HTMLElement>('[data-href="/Bob/status/7"]')!;
     expect(post).toHaveAttribute('data-te-fully-hidden');
+    runFrame();
+    const row = media.closest('li')!;
+    resize(list, 1200);
+    resize(row, 319.5);
+    expect(reservedHeight(row)).toBeUndefined();
+
+    row.remove();
+    await Promise.resolve();
+    runFrame();
+    list.insertAdjacentHTML('afterbegin', '<li data-index="6"><div role="link" data-href="/Alice/status/6"><article>Returning photo post</article></div></li>');
+    const returning = list.firstElementChild!;
+    // The host reads the row in the same stack as insertion, before any observer.
+    expect(reservedHeight(returning)).toBe('319.5px');
+    await Promise.resolve();
+    runFrame();
+    expect(reservedHeight(returning)).toBeUndefined();
 
     // The virtualizer may also keep the same frame and article for another post.
     post.dataset.href = '/Carol/status/9';
@@ -61,6 +111,49 @@ it('sizes media and filters returning Following rows before the virtual list mea
   } finally {
     cleanup.forEach(fn => fn());
     history.replaceState(null, '', originalUrl);
-    vi.unstubAllGlobals();
   }
+});
+
+it('expires reservations on feed or width changes and only reuses them for the measured post at its own index', () => {
+  const resize = observeLayout();
+  document.body.innerHTML = '<main><section aria-labelledby="feed"><div id="urt:home:following:latest"><ul></ul></div></section></main>';
+  const list = document.querySelector('ul')!;
+  const markup = '<li data-index="4"><div role="link" data-href="/Alice/status/4"><article></article></div></li>';
+  list.innerHTML = markup;
+  const heights = createHomeRowHeights();
+  try {
+    heights.sync();
+    resize(list, 8000);
+    resize(list.firstElementChild!, 240);
+    resize(list.firstElementChild!, 312);
+    list.innerHTML = markup.replace('/Alice/status/4', '/Bob/status/5');
+    const replacement = list.firstElementChild!;
+    expect(reservedHeight(replacement)).toBeUndefined();
+    replacement.querySelector('article')!.innerHTML = '<div role="link" data-href="/Alice/status/4">Quote</div>';
+    expect(reservedHeight(replacement)).toBeUndefined();
+    heights.sync();
+    replacement.querySelector('[data-href]')!.setAttribute('data-href', '/Alice/status/4');
+    expect(reservedHeight(replacement)).toBe('312px');
+    heights.sync();
+    expect(reservedHeight(replacement)).toBeUndefined();
+    list.innerHTML = markup.replace('data-index="4"', 'data-index="5"');
+    expect(reservedHeight(list.firstElementChild!)).toBeUndefined();
+    list.innerHTML = markup;
+    expect(reservedHeight(list.firstElementChild!)).toBe('312px');
+    resize(list, 9000);
+    expect(reservedHeight(list.firstElementChild!)).toBe('312px');
+    resize(list, 9000, 800);
+    expect(reservedHeight(list.firstElementChild!)).toBeUndefined();
+    heights.sync();
+    resize(list.firstElementChild!, 220, 800);
+    const next = document.createElement('ul');
+    next.innerHTML = markup;
+    list.replaceWith(next);
+    heights.sync();
+    next.innerHTML = markup;
+    expect(reservedHeight(next.firstElementChild!)).toBeUndefined();
+  } finally {
+    heights.destroy();
+  }
+  expect(document.adoptedStyleSheets).toHaveLength(0);
 });

@@ -4,6 +4,7 @@ import { EXTERNAL_VIDEO_DATA_EVENT } from '../../src/platform/x/external-video-d
 import { createXExternalVideoManager } from '../../src/platform/x/external-video-manager';
 import { createXImageDownloadManager } from '../../src/platform/x/image-download-manager';
 import { hasNewHomeTimelinePosts } from '../../src/platform/x/home-timeline';
+import { createHomeRowHeights } from '../../src/platform/x/home-row-heights';
 import { createXInterfaceModuleManager } from '../../src/platform/x/interface-module-manager';
 import { createXRepostTimelineManager } from '../../src/platform/x/list-repost-manager';
 import { INSTALL_TIMELINE_ROW_STYLE } from '../../src/platform/x/timeline-style-message';
@@ -54,6 +55,8 @@ export default defineContentScript({
     );
     let animationFrame: number | null = null;
     let repostsNeedScan = true;
+    const homeRowHeights = createHomeRowHeights();
+    const unsubscribeRowHeights = listRepostPreferenceRepository.subscribe(homeRowHeights.reset);
 
     const scan = () => {
       animationFrame = null;
@@ -67,6 +70,7 @@ export default defineContentScript({
       videoDownloadManager.sync();
       imageDownloadManager.sync();
       externalVideoManager.sync();
+      homeRowHeights.sync();
     };
 
     const scheduleScan = () => {
@@ -108,6 +112,8 @@ export default defineContentScript({
 
     const cleanup = () => {
       observer.disconnect();
+      unsubscribeRowHeights();
+      homeRowHeights.destroy();
       if (animationFrame !== null) {
         window.cancelAnimationFrame(animationFrame);
       }
