@@ -157,6 +157,8 @@ it('expires reservations on feed or width changes and only reuses them for the m
     expect(reservedHeight(list.firstElementChild!)).toBe('312px');
     resize(list, 9000);
     expect(reservedHeight(list.firstElementChild!)).toBe('312px');
+    resize(list, 0, 0); // The host can hide the background while a viewer is open.
+    expect(reservedHeight(list.firstElementChild!)).toBe('312px');
     resize(list, 9000, 800);
     expect(reservedHeight(list.firstElementChild!)).toBeUndefined();
     heights.sync();
@@ -204,6 +206,81 @@ it('keeps list measurements while its rows are unmounted and clears them when na
     expect(reservedHeight(list.firstElementChild!)).toBeUndefined();
   } finally {
     heights.destroy();
+    history.replaceState(null, '', originalUrl);
+  }
+});
+
+it.each([
+  ['/home', 'urt:home:following:latest', '/Alice/status/8/video/1'],
+  ['/i/lists/42', 'urt:list:42', '/i/lists/42'],
+])('keeps the clicked video at the same viewport offset through an overlay on %s', async (path, feed, viewerPath) => {
+  const originalUrl = location.href;
+  const resize = observeLayout();
+  const cleanup: Array<() => void> = [];
+  const ctx = { isValid: true, addEventListener: vi.fn(), onInvalidated: (fn: () => void) => cleanup.push(fn) };
+  vi.stubGlobal('defineContentScript', (entry: { main: (context: typeof ctx) => void }) => entry.main(ctx));
+  const frames = new Map<number, FrameRequestCallback>();
+  let id = 0;
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(fn => { frames.set(++id, fn); return id; });
+  vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(id => { frames.delete(id); });
+  const paint = () => {
+    const pending = [...frames.values()];
+    frames.clear();
+    pending.forEach(fn => fn(0));
+  };
+  let y = 1800;
+  let postY = 1900;
+  vi.spyOn(window, 'scrollY', 'get').mockImplementation(() => y);
+  vi.spyOn(window, 'scrollTo').mockImplementation((options: ScrollToOptions | number | undefined, top?: number) => {
+    y = typeof options === 'object' ? options.top ?? y : top ?? y;
+  });
+  history.replaceState(null, '', path);
+  document.body.innerHTML = `<main><section aria-labelledby="feed"><div id="${feed}"><ul>
+    <li data-index="7"><div role="link" data-href="/Bob/status/7"><article><div data-testid="socialContext">Bob Reposted</div></article></div></li>
+    <li data-index="8"><div role="link" data-href="/Alice/status/8"><article><div data-press-control><video></video></div></article></div></li>
+    </ul></div></section></main>`;
+  const list = document.querySelector('ul')!;
+  const row = list.lastElementChild!;
+  vi.spyOn(row, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, postY - y, 600, 320));
+  try {
+    vi.resetModules();
+    await import('../entrypoints/twitter.content/index');
+    paint();
+    const repost = list.querySelector('[data-href="/Bob/status/7"]')!;
+    expect(repost).toHaveAttribute('data-te-fully-hidden');
+    resize(list, 8000);
+    resize(row, 320);
+    const player = row.querySelector('video')!;
+    player.click();
+    history.replaceState(null, '', viewerPath);
+    document.querySelector('main')!.setAttribute('aria-hidden', 'true');
+    y = 0;
+    await Promise.resolve();
+    paint();
+    expect(row.getBoundingClientRect().top).toBe(100);
+    document.body.insertAdjacentHTML('beforeend', '<div role="dialog" aria-modal="true"><video></video></div>');
+    y = 0;
+    await Promise.resolve();
+    paint();
+    expect.soft(row.getBoundingClientRect().top).toBe(100);
+    expect.soft(repost).toHaveAttribute('data-te-fully-hidden');
+    expect.soft(list).toHaveAttribute('data-te-measured-feed');
+
+    document.querySelector('[role="dialog"]')!.remove();
+    document.querySelector('main')!.removeAttribute('aria-hidden');
+    history.replaceState(null, '', path);
+    // The host restores an estimated offset, and the heights above the video change.
+    y = 1350;
+    postY += 125;
+    await Promise.resolve();
+    paint();
+    expect(row.getBoundingClientRect().top).toBe(100);
+    y = 1400;
+    window.dispatchEvent(new WheelEvent('wheel'));
+    paint();
+    expect(y).toBe(1400);
+  } finally {
+    cleanup.forEach(fn => fn());
     history.replaceState(null, '', originalUrl);
   }
 });

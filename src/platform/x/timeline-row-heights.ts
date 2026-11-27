@@ -25,7 +25,7 @@ export function createTimelineRowHeights() {
   const observer = new ResizeObserver(entries => {
     const listSize = entries.find(entry => entry.target === list)?.borderBoxSize[0];
     let changed = false;
-    if (listSize && listSize.inlineSize !== width) {
+    if (listSize && listSize.inlineSize > 0 && listSize.inlineSize !== width) {
       width = listSize.inlineSize;
       changed = rules.size > 0;
       rules.clear();

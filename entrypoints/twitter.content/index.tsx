@@ -5,6 +5,7 @@ import { createXExternalVideoManager } from '../../src/platform/x/external-video
 import { createXImageDownloadManager } from '../../src/platform/x/image-download-manager';
 import { hasNewTimelinePosts } from '../../src/platform/x/virtual-timeline';
 import { createTimelineRowHeights } from '../../src/platform/x/timeline-row-heights';
+import { createTimelineVideoScrollManager } from '../../src/platform/x/timeline-video-scroll';
 import { createXInterfaceModuleManager } from '../../src/platform/x/interface-module-manager';
 import { createXRepostTimelineManager } from '../../src/platform/x/list-repost-manager';
 import { INSTALL_TIMELINE_ROW_STYLE } from '../../src/platform/x/timeline-style-message';
@@ -59,6 +60,7 @@ export default defineContentScript({
     let animationFrame: number | null = null;
     let repostsNeedScan = true;
     const rowHeights = createTimelineRowHeights();
+    const videoScroll = createTimelineVideoScrollManager();
     const unsubscribeRowHeights = listRepostPreferenceRepository.subscribe(rowHeights.reset);
 
     const scan = () => {
@@ -68,13 +70,16 @@ export default defineContentScript({
       }
       manager.sync(findXNoteSurfaceTargets());
       interfaceModuleManager.sync();
-      if (repostsNeedScan) repostTimelineManager.sync();
+      // The covered feed can be aria-hidden or have a media URL. Keep its
+      // filtered rows and measurements in place until the viewer closes.
+      const viewingVideo = videoScroll.sync();
+      if (repostsNeedScan && !viewingVideo) repostTimelineManager.sync();
       mediaNavigationManager.sync();
       videoDownloadManager.sync();
       videoDurationManager.sync();
       imageDownloadManager.sync();
       externalVideoManager.sync();
-      rowHeights.sync();
+      if (!viewingVideo) rowHeights.sync();
     };
 
     const scheduleScan = () => {
@@ -86,7 +91,7 @@ export default defineContentScript({
 
     const observer = new MutationObserver((records) => {
       scheduleScan();
-      if (ctx.isValid && hasNewTimelinePosts(records)) {
+      if (ctx.isValid && !videoScroll.sync() && hasNewTimelinePosts(records)) {
         // A returning filtered post must have its final height in this frame.
         repostTimelineManager.sync();
         repostsNeedScan = false;
@@ -96,11 +101,12 @@ export default defineContentScript({
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['href', 'src', 'srcset', 'poster', 'title', 'data-href', 'data-open', 'data-expanded-url', 'data-theme'],
+      attributeFilter: ['href', 'src', 'srcset', 'poster', 'title', 'data-href', 'data-open', 'open', 'hidden', 'aria-hidden', 'data-expanded-url', 'data-theme'],
       characterData: true,
     });
 
     ctx.addEventListener(window, 'wxt:locationchange', scheduleScan);
+    ctx.addEventListener(window, 'pageshow', scheduleScan);
     ctx.addEventListener(window, 'resize', scheduleScan);
     ctx.addEventListener(document, EXTERNAL_VIDEO_DATA_EVENT, scheduleScan);
     for (const type of ['loadedmetadata', 'durationchange', 'play', 'pause', 'emptied'] as const) {
@@ -122,6 +128,7 @@ export default defineContentScript({
     const cleanup = () => {
       observer.disconnect();
       unsubscribeRowHeights();
+      videoScroll.destroy();
       rowHeights.destroy();
       if (animationFrame !== null) {
         window.cancelAnimationFrame(animationFrame);
@@ -136,7 +143,9 @@ export default defineContentScript({
       externalVideoManager.destroy();
     };
 
-    window.addEventListener('pagehide', cleanup, { once: true });
+    ctx.addEventListener(window, 'pagehide', event => {
+      if (!event.persisted) cleanup();
+    });
     ctx.onInvalidated(cleanup);
     scheduleScan();
   },
