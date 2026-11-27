@@ -1,0 +1,14 @@
+.te-video-duration {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 76%);
+  color: #fff;
+  font: 600 12px/18px system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  user-select: none;
+}

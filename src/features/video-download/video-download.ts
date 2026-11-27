@@ -45,6 +45,20 @@ export function twitterMediaIdentityKey(identity: TwitterMediaIdentity): string 
   return `${identity.family}:${identity.id}`;
 }
 
+/** The API and the player can request different formats and sizes of the same poster. */
+export function twitterVideoDurationKey(value: string): string | null {
+  const identity = parseTwitterMediaIdentity(value);
+  if (identity) return twitterMediaIdentityKey(identity);
+  try {
+    const url = new URL(value);
+    if (url.origin !== 'https://pbs.twimg.com') return null;
+    const image = /^\/media\/([\w-]+)(?:\.(?:jpe?g|png|webp|avif))?$/i.exec(url.pathname);
+    return image ? `poster:${image[1]}` : null;
+  } catch {
+    return null;
+  }
+}
+
 function isFragmentedTwitterStreamUrl(
   url: URL,
   identity: TwitterMediaIdentity,

@@ -2,6 +2,7 @@ import {
   isDownloadableTwitterVideoUrl,
   parseTwitterMediaIdentity,
   twitterMediaIdentityKey,
+  twitterVideoDurationKey,
   type TwitterMediaIdentity,
 } from '../../features/video-download/video-download';
 
@@ -14,6 +15,7 @@ export interface CapturedTwitterVideoVariants {
   tweetId: string;
   mediaKeys: string[];
   urls: string[];
+  durationMsByMediaKey?: Record<string, number>;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -31,20 +33,37 @@ export function extractTwitterVideoVariants(
   ];
   const visited = new Set<object>();
 
-  function captureUrl(tweetId: string, url: string) {
-    const identity = parseTwitterMediaIdentity(url);
-    if (!identity || !isDownloadableTwitterVideoUrl(url)) {
-      return;
-    }
-
-    const mediaKey = twitterMediaIdentityKey(identity);
+  function captureMedia(tweetId: string, mediaKey: string) {
     const storeKey = tweetId ? `tweet:${tweetId}` : `media:${mediaKey}`;
-    const existing = captures.get(storeKey);
-    captures.set(storeKey, {
-      tweetId,
-      mediaKeys: [...new Set([...(existing?.mediaKeys ?? []), mediaKey])],
-      urls: [...new Set([...(existing?.urls ?? []), url])],
-    });
+    let capture = captures.get(storeKey);
+    if (!capture) {
+      capture = { tweetId, mediaKeys: [], urls: [] };
+      captures.set(storeKey, capture);
+    }
+    if (!capture.mediaKeys.includes(mediaKey)) capture.mediaKeys.push(mediaKey);
+    return capture;
+  }
+
+  function captureDuration(tweetId: string, record: JsonRecord) {
+    const info = record.video_info ?? record.videoInfo ?? record;
+    if (!isRecord(info)) return;
+    const ms = info.duration_millis ?? info.durationMillis ?? info.duration_ms ?? info.durationMs;
+    if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return;
+
+    // Match only the poster and variants of this attachment, never its siblings.
+    const sources = [record.media_url_https, record.mediaUrlHttps, record.preview_image_url];
+    if (Array.isArray(info.variants)) {
+      for (const variant of info.variants) {
+        if (isRecord(variant)) sources.push(variant.url ?? variant.src);
+      }
+    }
+    for (const source of sources) {
+      const key = typeof source === 'string' && twitterVideoDurationKey(source);
+      if (!key || key.startsWith('tweet_video:') || record.type === 'animated_gif') continue;
+      const capture = captureMedia(tweetId, key);
+      const durations = capture.durationMsByMediaKey ??= {};
+      durations[key] = ms;
+    }
   }
 
   while (stack.length > 0) {
@@ -55,7 +74,11 @@ export function extractTwitterVideoVariants(
 
     const { value, tweetId } = entry;
     if (typeof value === 'string') {
-      captureUrl(tweetId, value);
+      const identity = parseTwitterMediaIdentity(value);
+      if (identity && isDownloadableTwitterVideoUrl(value)) {
+        const capture = captureMedia(tweetId, twitterMediaIdentityKey(identity));
+        if (!capture.urls.includes(value)) capture.urls.push(value);
+      }
       continue;
     }
 
@@ -76,6 +99,7 @@ export function extractTwitterVideoVariants(
       typeof record.rest_id === 'string' && /^\d+$/.test(record.rest_id)
         ? record.rest_id
         : tweetId;
+    captureDuration(nestedTweetId, record);
     const values = Object.values(record);
     for (let index = values.length - 1; index >= 0; index -= 1) {
       stack.push({ value: values[index], tweetId: nestedTweetId });
@@ -100,23 +124,69 @@ export function captureTwitterVideoUrl(
   };
 }
 
+/** X streams the first Relay results as JSON strings inside self-removing scripts. */
+export function captureInitialTwitterVideoData(root: Document): void {
+  function readScript(script: HTMLScriptElement) {
+    if (script.hasAttribute('src')) return;
+    const source = script.textContent ?? '';
+    if (!source.includes('duration_millis') && !source.includes('durationMillis') &&
+        !source.includes('duration_ms') && !source.includes('durationMs')) return;
+    const results = /\bkind:\s*"Result\.Ok"\s*,\s*value:\s*("(?:[^"\\]|\\.)*")/g;
+    for (const match of source.matchAll(results)) {
+      try {
+        // Decode only the serialized result. The surrounding page script is executable JS.
+        const payload: unknown = JSON.parse(JSON.parse(match[1]!));
+        publishTwitterVideoVariants(root, extractTwitterVideoVariants(payload));
+      } catch {
+        // The parser can deliver a partially written script in an earlier batch.
+      }
+    }
+  }
+
+  function readAddedScripts(records: MutationRecord[]) {
+    const scripts = new Set<HTMLScriptElement>();
+    for (const record of records) {
+      if (record.target instanceof HTMLScriptElement) scripts.add(record.target);
+      for (const node of record.addedNodes) {
+        if (node instanceof HTMLScriptElement) scripts.add(node);
+      }
+    }
+    for (const script of scripts) readScript(script);
+  }
+
+  if (root.readyState === 'loading') {
+    const observer = new MutationObserver(readAddedScripts);
+    observer.observe(root, { childList: true, subtree: true });
+    root.addEventListener('DOMContentLoaded', () => {
+      readAddedScripts(observer.takeRecords());
+      observer.disconnect();
+    }, { once: true });
+  }
+  for (const script of Array.from(root.scripts)) readScript(script);
+}
+
 function captureStoreKey(item: CapturedTwitterVideoVariants): string {
   return item.tweetId
     ? `tweet:${item.tweetId}`
     : `media:${item.mediaKeys.join('|')}`;
 }
 
-function readStore(documentRoot: Document): CapturedTwitterVideoVariants[] {
-  const store = documentRoot.querySelector<HTMLElement>(
+function readStoreText(documentRoot: Document): string {
+  return documentRoot.querySelector(
     `[${TWITTER_VIDEO_DATA_STORE_ATTRIBUTE}]`,
-  );
-  if (!store?.textContent) {
+  )?.textContent ?? '';
+}
+
+function parseStore(text: string): CapturedTwitterVideoVariants[] {
+  if (!text) {
     return [];
   }
 
   try {
-    const value = JSON.parse(store.textContent) as unknown;
-    return Array.isArray(value) ? (value as CapturedTwitterVideoVariants[]) : [];
+    const value: unknown = JSON.parse(text);
+    return Array.isArray(value) ? value.filter(item =>
+      isRecord(item) && Array.isArray(item.mediaKeys) && Array.isArray(item.urls),
+    ) : [];
   } catch {
     return [];
   }
@@ -131,7 +201,7 @@ export function publishTwitterVideoVariants(
   }
 
   const captures = new Map(
-    readStore(documentRoot).map((item) => [captureStoreKey(item), item]),
+    parseStore(readStoreText(documentRoot)).map((item) => [captureStoreKey(item), item]),
   );
   for (const addition of additions) {
     const key = captureStoreKey(addition);
@@ -141,6 +211,9 @@ export function publishTwitterVideoVariants(
       tweetId: addition.tweetId,
       mediaKeys: [...new Set([...(existing?.mediaKeys ?? []), ...addition.mediaKeys])],
       urls: [...new Set([...(existing?.urls ?? []), ...addition.urls])],
+      durationMsByMediaKey: existing?.durationMsByMediaKey || addition.durationMsByMediaKey
+        ? { ...existing?.durationMsByMediaKey, ...addition.durationMsByMediaKey }
+        : undefined,
     });
   }
 
@@ -188,7 +261,7 @@ export function readCapturedTwitterVideoUrls(
   const wantedMediaKeys = new Set(identities.map(twitterMediaIdentityKey));
   const urls = new Set<string>();
 
-  for (const capture of readStore(documentRoot)) {
+  for (const capture of parseStore(readStoreText(documentRoot))) {
     const tweetMatches = Boolean(tweetId) && capture.tweetId === tweetId;
     const mediaMatches = capture.mediaKeys.some((key) => wantedMediaKeys.has(key));
     if (!tweetMatches && !mediaMatches) {
@@ -210,4 +283,23 @@ export function readCapturedTwitterVideoUrls(
   }
 
   return [...urls];
+}
+
+// Timeline scans are frequent; rebuild the media index only when X publishes data.
+export function createTwitterVideoDurationReader(documentRoot: Document) {
+  let previousText = '';
+  const durations = new Map<string, number>();
+  return (): ReadonlyMap<string, number> => {
+    const text = readStoreText(documentRoot);
+    if (text !== previousText) {
+      previousText = text;
+      durations.clear();
+      for (const capture of parseStore(text)) {
+        for (const [key, ms] of Object.entries(capture.durationMsByMediaKey ?? {})) {
+          if (Number.isFinite(ms) && ms > 0) durations.set(key, ms / 1000);
+        }
+      }
+    }
+    return durations;
+  };
 }

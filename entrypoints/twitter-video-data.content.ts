@@ -4,6 +4,7 @@ import {
   publishExternalVideoCards,
 } from '../src/platform/x/external-video-data-bridge';
 import {
+  captureInitialTwitterVideoData,
   captureTwitterVideoUrl,
   ensureTwitterVideoDataStore,
   extractTwitterVideoVariants,
@@ -16,6 +17,7 @@ export default defineContentScript({
   world: 'MAIN',
   main() {
     ensureTwitterVideoDataStore(document);
+    captureInitialTwitterVideoData(document);
     ensureExternalVideoDataStore(document);
 
     const capturePayload = (payload: unknown) => {
@@ -45,8 +47,14 @@ export default defineContentScript({
       }
     };
 
-    const isXDataResponse = (url: string) =>
-      url.includes('/graphql/') || url.includes('/i/api/');
+    const isXDataResponse = (url: string) => {
+      try {
+        const path = new URL(url, location.origin).pathname;
+        return path.endsWith('/graphql') || path.includes('/graphql/') || path.includes('/i/api/');
+      } catch {
+        return false;
+      }
+    };
 
     const originalResponseJson = Response.prototype.json;
     Response.prototype.json = async function (this: Response) {

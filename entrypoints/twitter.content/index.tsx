@@ -18,6 +18,8 @@ import { mountXVideoDownloadUi } from '../../src/platform/x/mount-video-download
 import { createXSurfaceMountManager } from '../../src/platform/x/surface-mount-manager';
 import { readCapturedTwitterVideoUrls } from '../../src/platform/x/twitter-video-data-bridge';
 import { createXVideoDownloadManager } from '../../src/platform/x/video-download-manager';
+import { createXVideoDurationManager } from '../../src/platform/x/video-duration-manager';
+import './video-duration.css';
 import { interfaceModuleVisibilityRepository } from '../../src/shared/storage/browser-interface-module-visibility-repository';
 import { listRepostPreferenceRepository } from '../../src/shared/storage/browser-list-repost-preference-repository';
 import { userNoteRepository } from '../../src/shared/storage/browser-user-note-repository';
@@ -39,6 +41,7 @@ export default defineContentScript({
       mountXMediaNavigationUi,
     );
     const imageDownloadManager = createXImageDownloadManager(mountXImageDownloadUi);
+    const videoDurationManager = createXVideoDurationManager();
     const externalVideoManager = createXExternalVideoManager(mountXExternalVideoUi);
     const videoDownloadManager = createXVideoDownloadManager(
       mountXVideoDownloadUi,
@@ -68,6 +71,7 @@ export default defineContentScript({
       if (repostsNeedScan) repostTimelineManager.sync();
       mediaNavigationManager.sync();
       videoDownloadManager.sync();
+      videoDurationManager.sync();
       imageDownloadManager.sync();
       externalVideoManager.sync();
       homeRowHeights.sync();
@@ -99,6 +103,11 @@ export default defineContentScript({
     ctx.addEventListener(window, 'wxt:locationchange', scheduleScan);
     ctx.addEventListener(window, 'resize', scheduleScan);
     ctx.addEventListener(document, EXTERNAL_VIDEO_DATA_EVENT, scheduleScan);
+    for (const type of ['loadedmetadata', 'durationchange', 'play', 'pause', 'emptied'] as const) {
+      ctx.addEventListener(document, type, (event) => {
+        if (event.target instanceof HTMLVideoElement) scheduleScan();
+      }, true);
+    }
     ctx.addEventListener(
       document,
       'load',
@@ -122,6 +131,7 @@ export default defineContentScript({
       repostTimelineManager.destroy();
       mediaNavigationManager.destroy();
       videoDownloadManager.destroy();
+      videoDurationManager.destroy();
       imageDownloadManager.destroy();
       externalVideoManager.destroy();
     };
