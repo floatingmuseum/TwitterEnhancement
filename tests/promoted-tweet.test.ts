@@ -187,6 +187,8 @@ describe('semantic timeline promotion cards', () => {
     <div class="text-subtext2 line-clamp-1">来自 attio.com 的广告</div></a>`;
   const photo = `<a target="_blank" href="${destination}"><div style="aspect-ratio: 1 / 1">
     <img alt="卡片图像"></div></a>`;
+  const slides = '<div><a target="_blank" data-card-slide="true" href="https://attio.com/other"><img></a></div>';
+  const collection = `<div role="group">${photo}${slides}${footer}</div>`;
   const player = '<div style="aspect-ratio: 16 / 9"><div data-press-control><img alt="视频缩略图"></div></div>';
   const cta = `<a target="_blank" href="${destination}"><div><div>Ad from attio.com</div>
     <span data-slot="xds-button">Learn more</span></div></a>`;
@@ -205,6 +207,20 @@ describe('semantic timeline promotion cards', () => {
     },
   );
 
+  it('recognizes a tracked collection ad with product slides between the cover and footer', () => {
+    expect(isPromotedTweetArticle(render(collection))).toBe(true);
+  });
+
+  it.each([
+    `<div role="group">${photo}${slides}${footer.replace('/product?', '/other?')}</div>`,
+    `<div role="group">${photo}<div>Unrelated content</div>${footer}</div>`,
+    `<div>${photo}${slides}${footer}</div>`,
+    collection.replaceAll('?twclid=sample', ''),
+    `<div data-slot="embedded-tweet-frame">${collection}</div>`,
+  ])('keeps unrelated or embedded collection links visible', card => {
+    expect(isPromotedTweetArticle(render(card))).toBe(false);
+  });
+
   it.each([
     footer,
     photo + footer.replace('?twclid=sample', '?source=twclid=sample'),
@@ -215,8 +231,8 @@ describe('semantic timeline promotion cards', () => {
     expect(isPromotedTweetArticle(render(card))).toBe(false);
   });
 
-  it('does not classify an ordinary post with a timestamp and a shared tracked card as promoted', () => {
+  it.each([photo + footer, collection])('does not classify a timestamped post sharing a tracked card as promoted', card => {
     const time = '<span><a href="/attio/status/101">1小时</a></span>';
-    expect(isPromotedTweetArticle(render(photo + footer, time))).toBe(false);
+    expect(isPromotedTweetArticle(render(card, time))).toBe(false);
   });
 });

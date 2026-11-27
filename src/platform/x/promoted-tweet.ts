@@ -55,8 +55,12 @@ function hasTrackedMediaCard(article: HTMLElement): boolean {
     if (!media || !belongsToArticle(footer, article) ||
         !/^https?:$/.test(footer.protocol) || !new URLSearchParams(footer.search).get('twclid')) continue;
 
-    if (media instanceof HTMLAnchorElement && media.target === '_blank' &&
-        media.href === footer.href && media.querySelector(':scope > [style*="aspect-ratio"]')) return true;
+    // A collection inserts a product carousel between its cover and footer.
+    const cover = footer.parentElement?.matches('[role="group"]') &&
+        media.querySelector('a[data-card-slide="true"][target="_blank"]')
+      ? media.previousElementSibling : media;
+    if (cover instanceof HTMLAnchorElement && cover.target === '_blank' &&
+        cover.href === footer.href && cover.querySelector(':scope > [style*="aspect-ratio"]')) return true;
 
     if (media.matches('[style*="aspect-ratio"]') &&
         media.querySelector('video, [data-press-control], img[src*="_video_thumb/"]')) return true;
