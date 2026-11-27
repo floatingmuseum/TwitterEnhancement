@@ -3,6 +3,7 @@ import { findXNoteSurfaceTargets } from '../../src/platform/x/dom-adapter';
 import { EXTERNAL_VIDEO_DATA_EVENT } from '../../src/platform/x/external-video-data-bridge';
 import { createXExternalVideoManager } from '../../src/platform/x/external-video-manager';
 import { createXImageDownloadManager } from '../../src/platform/x/image-download-manager';
+import { hasNewHomeTimelinePosts } from '../../src/platform/x/home-timeline';
 import { createXInterfaceModuleManager } from '../../src/platform/x/interface-module-manager';
 import { createXRepostTimelineManager } from '../../src/platform/x/list-repost-manager';
 import { INSTALL_TIMELINE_ROW_STYLE } from '../../src/platform/x/timeline-style-message';
@@ -52,6 +53,7 @@ export default defineContentScript({
       ],
     );
     let animationFrame: number | null = null;
+    let repostsNeedScan = true;
 
     const scan = () => {
       animationFrame = null;
@@ -60,7 +62,7 @@ export default defineContentScript({
       }
       manager.sync(findXNoteSurfaceTargets());
       interfaceModuleManager.sync();
-      repostTimelineManager.sync();
+      if (repostsNeedScan) repostTimelineManager.sync();
       mediaNavigationManager.sync();
       videoDownloadManager.sync();
       imageDownloadManager.sync();
@@ -68,12 +70,20 @@ export default defineContentScript({
     };
 
     const scheduleScan = () => {
+      repostsNeedScan = true;
       if (animationFrame === null) {
         animationFrame = window.requestAnimationFrame(scan);
       }
     };
 
-    const observer = new MutationObserver(scheduleScan);
+    const observer = new MutationObserver((records) => {
+      scheduleScan();
+      if (ctx.isValid && hasNewHomeTimelinePosts(records)) {
+        // A returning filtered post must have its final height in this frame.
+        repostTimelineManager.sync();
+        repostsNeedScan = false;
+      }
+    });
     observer.observe(document.documentElement, {
       childList: true,
       subtree: true,

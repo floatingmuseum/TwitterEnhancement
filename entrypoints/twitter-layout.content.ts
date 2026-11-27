@@ -1,4 +1,5 @@
 import { createXInterfaceLayoutManager, INITIAL_WIDE_LAYOUT_ATTRIBUTE } from '../src/platform/x/interface-layout-manager';
+import { hasNewHomeTimelinePosts } from '../src/platform/x/home-timeline';
 import { interfaceLayoutPreferenceRepository } from '../src/shared/storage/browser-interface-layout-preference-repository';
 
 export default defineContentScript({
@@ -15,12 +16,16 @@ export default defineContentScript({
       });
     }
 
-    // X can mount the first columns inside its own animation frame. Apply the
-    // saved geometry in that mutation checkpoint, before the same frame paints.
+    // X mounts columns and returning posts inside its own animation frame.
+    // Apply their geometry before its virtual list measures the new row heights.
     let waitingForColumns = true;
-    const observer = new MutationObserver(() => {
-      if (waitingForColumns && document.querySelector('main + aside, [data-testid="sidebarColumn"]')) {
-        waitingForColumns = false;
+    const observer = new MutationObserver((records) => {
+      if (!ctx.isValid) return;
+      const mountedColumns = waitingForColumns && document.querySelector('main + aside, [data-testid="sidebarColumn"]');
+      if (mountedColumns) waitingForColumns = false;
+      if (mountedColumns || hasNewHomeTimelinePosts(records)) {
+        if (frame !== null) cancelAnimationFrame(frame);
+        frame = null;
         layout.sync();
       } else {
         scheduleLayout();
