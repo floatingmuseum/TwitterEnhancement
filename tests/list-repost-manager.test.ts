@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type {
   HiddenRepostDisplayMode,
   ListRepostPreferenceListener,
@@ -10,6 +13,7 @@ import {
   getXListId,
   isPlainRepostArticle,
 } from '../src/platform/x/list-repost-manager';
+import { mountXRepostTimelineUi } from '../src/platform/x/mount-list-repost-ui';
 
 class FakeListRepostPreferenceRepository
   implements ListRepostPreferenceRepository
@@ -205,6 +209,67 @@ describe('X repost timeline manager', () => {
     expect(target?.controlPlacement).toBe('append');
     expect(target?.timeline).toHaveClass('timeline');
     expect(target?.surface).toBe('list');
+  });
+
+  it('filters reposts and ads in a semantic list timeline', async () => {
+    const user = userEvent.setup();
+    document.body.innerHTML = `
+      <main><section aria-labelledby="list-title"><h2 id="list-title">列表</h2>
+        <div id="urt:list:42"><ul>
+          <li data-index="0"><div role="link" data-href="/alice/status/101" style="display:grid">
+            <article><div><span><svg data-icon="icon-repost-fill"></svg></span>
+            <div><a href="/bob">Bob 已转帖</a></div></div><article>原文</article></article>
+          </div></li>
+          <li data-index="1"><div role="link" data-href="/ad/status/102">
+            <article><span data-testid="promotedIndicator">广告</span></article>
+          </div></li>
+          <li data-index="2"><div role="link" data-href="/carol/status/103"><article>原创</article></div></li>
+        </ul></div></section></main>`;
+    const repository = new FakeListRepostPreferenceRepository();
+    const manager = createXRepostTimelineManager(
+      target => mountXRepostTimelineUi(target, repository), repository,
+    );
+    const url = new URL('https://x.com/i/lists/42');
+    const repost = document.querySelector<HTMLElement>('[data-href="/alice/status/101"]')!;
+    const ad = document.querySelector<HTMLElement>('[data-href="/ad/status/102"]')!;
+    const original = document.querySelector<HTMLElement>('[data-href="/carol/status/103"]')!;
+    const rowStyles = document.createElement('style');
+    rowStyles.textContent = readFileSync('public/hidden-timeline-rows.css', 'utf8');
+    document.head.append(rowStyles);
+    try {
+      await act(async () => manager.sync(document, url));
+      expect(repost.style.display).toBe('none');
+      expect(ad.style.display).toBe('none');
+      expect(original.style.display).toBe('');
+      expect(getComputedStyle(repost.closest('li')!).minHeight).toBe('1px');
+      const host = document.getElementById('urt:list:42')!.previousElementSibling!;
+      const toggle = host.shadowRoot!.querySelector<HTMLButtonElement>('[role="switch"]')!;
+      expect(toggle).toHaveAccessibleName('显示转贴');
+      expect(toggle).toBeEnabled();
+
+      await user.click(toggle);
+      expect(repost.style.display).toBe('grid');
+      expect(ad.style.display).toBe('none');
+      act(() => manager.sync(document, new URL('https://x.com/i/lists/42/members')));
+      expect(ad.style.display).toBe('');
+      expect(host.isConnected).toBe(false);
+    } finally {
+      act(() => manager.destroy());
+      rowStyles.remove();
+    }
+  });
+
+  it('targets the visible list and skips virtual rows in overlays and sidebars', () => {
+    const list = '<ul><li data-index="3"><div><article>Post</article></div></li></ul>';
+    document.body.innerHTML = `<main>
+      <section aria-hidden="true">${list}</section><aside>${list}</aside>
+      <div role="dialog">${list}</div><section id="active">${list}</section>
+    </main>`;
+    const timeline = document.querySelector('#active ul');
+    expect(findXRepostTimelineTarget(document, listUrl)).toMatchObject({
+      surface: 'list', controlAnchor: timeline, controlPlacement: 'before', timeline,
+    });
+    expect(findXRepostTimelineTarget(document, new URL('https://x.com/explore'))).toBeNull();
   });
 
   it('recognizes home feeds and only the main posts tab on profile pages', () => {

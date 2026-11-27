@@ -189,6 +189,25 @@ export function findXRepostTimelineTarget(
     }
   }
 
+  if (route.surface === 'list') {
+    // X virtualizes list posts as indexed rows. The list header can be absent
+    // on scroll restoration, so keep the switch outside the measured rows.
+    const lists = root.querySelectorAll<HTMLElement>('main ul:has(> li[data-index] article)');
+    const timeline = Array.from(lists).find(list =>
+      !list.closest('article, aside, nav, [role="dialog"], [hidden], [aria-hidden="true"]'),
+    );
+    if (timeline) {
+      const feed = timeline.parentElement;
+      return {
+        controlAnchor: feed?.matches('[id^="urt:"]') ? feed : timeline,
+        controlPlacement: 'before',
+        timeline,
+        routeKey: route.key,
+        surface: route.surface,
+      };
+    }
+  }
+
   const primaryColumn = root.querySelector<HTMLElement>('[data-testid="primaryColumn"]');
   if (!primaryColumn) {
     return null;
