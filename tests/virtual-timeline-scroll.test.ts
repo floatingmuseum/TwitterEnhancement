@@ -1,5 +1,5 @@
 import { INTERFACE_LAYOUT_STORAGE_KEYS } from '../src/shared/storage/interface-layout-preference-repository';
-import { createHomeRowHeights } from '../src/platform/x/home-row-heights';
+import { createTimelineRowHeights } from '../src/platform/x/timeline-row-heights';
 
 vi.mock('wxt/browser', () => ({ browser: {
   runtime: { sendMessage: async () => true },
@@ -44,7 +44,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('sizes media and filters returning Following rows before the virtual list measures the frame', async () => {
+it.each([
+  ['/home', 'urt:home:following:latest'],
+  ['/i/lists/196831803', 'urt:list:196831803'],
+  ['/alice/lists/42', 'unlabelled-feed'],
+])('sizes media and filters returning rows before the virtual list measures the frame on %s', async (path, feedId) => {
   const resize = observeLayout();
   const cleanup: Array<() => void> = [];
   const ctx = { isValid: true, addEventListener: vi.fn(), onInvalidated: (fn: () => void) => cleanup.push(fn) };
@@ -62,13 +66,14 @@ it('sizes media and filters returning Following rows before the virtual list mea
     pending.forEach(fn => fn(0));
   };
   const originalUrl = location.href;
-  history.replaceState(null, '', '/home');
+  history.replaceState(null, '', path);
   document.body.innerHTML = `<div style="display:grid"><main><section aria-labelledby="following">
-    <div id="urt:home:following:latest"><ul><li data-index="8"><article>Visible post</article></li></ul></div>
+    <div id="${feedId}"><ul><li data-index="8"><article>Visible post</article></li></ul></div>
     </section></main><aside></aside></div>`;
   const list = document.querySelector('ul')!;
   vi.spyOn(document.querySelector('main')!, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 600, 800));
   try {
+    vi.resetModules();
     await import('../entrypoints/twitter-layout.content');
     await import('../entrypoints/twitter.content/index');
     runFrame();
@@ -90,24 +95,32 @@ it('sizes media and filters returning Following rows before the virtual list mea
     const row = media.closest('li')!;
     resize(list, 1200);
     resize(row, 319.5);
+    const repostRow = post.closest('li')!;
+    resize(repostRow, 1);
     expect(reservedHeight(row)).toBeUndefined();
 
     row.remove();
+    repostRow.remove();
     await Promise.resolve();
     runFrame();
     list.insertAdjacentHTML('afterbegin', '<li data-index="6"><div role="link" data-href="/Alice/status/6"><article>Returning photo post</article></div></li>');
     const returning = list.firstElementChild!;
     // The host reads the row in the same stack as insertion, before any observer.
     expect(reservedHeight(returning)).toBe('319.5px');
+    list.insertAdjacentHTML('beforeend', '<li data-index="7"><div role="link" data-href="/Bob/status/7" style="display:grid"><article><div data-testid="socialContext">Bob Reposted</div></article></div></li>');
+    const returningRepost = list.lastElementChild!;
+    expect(reservedHeight(returningRepost)).toBe('1px');
     await Promise.resolve();
+    const returningFrame = returningRepost.firstElementChild as HTMLElement;
+    expect(returningFrame).toHaveAttribute('data-te-fully-hidden');
     runFrame();
     expect(reservedHeight(returning)).toBeUndefined();
 
     // The virtualizer may also keep the same frame and article for another post.
-    post.dataset.href = '/Carol/status/9';
-    post.querySelector('article')!.textContent = 'Original post';
+    returningFrame.dataset.href = '/Carol/status/9';
+    returningFrame.querySelector('article')!.textContent = 'Original post';
     await Promise.resolve();
-    expect(post.style.display).toBe('grid');
+    expect(returningFrame.style.display).toBe('grid');
   } finally {
     cleanup.forEach(fn => fn());
     history.replaceState(null, '', originalUrl);
@@ -116,11 +129,13 @@ it('sizes media and filters returning Following rows before the virtual list mea
 
 it('expires reservations on feed or width changes and only reuses them for the measured post at its own index', () => {
   const resize = observeLayout();
+  const originalUrl = location.href;
+  history.replaceState(null, '', '/home');
   document.body.innerHTML = '<main><section aria-labelledby="feed"><div id="urt:home:following:latest"><ul></ul></div></section></main>';
   const list = document.querySelector('ul')!;
   const markup = '<li data-index="4"><div role="link" data-href="/Alice/status/4"><article></article></div></li>';
   list.innerHTML = markup;
-  const heights = createHomeRowHeights();
+  const heights = createTimelineRowHeights();
   try {
     heights.sync();
     resize(list, 8000);
@@ -154,6 +169,41 @@ it('expires reservations on feed or width changes and only reuses them for the m
     expect(reservedHeight(next.firstElementChild!)).toBeUndefined();
   } finally {
     heights.destroy();
+    history.replaceState(null, '', originalUrl);
   }
   expect(document.adoptedStyleSheets).toHaveLength(0);
+});
+
+it('keeps list measurements while its rows are unmounted and clears them when navigation reuses the list', () => {
+  const originalUrl = location.href;
+  const resize = observeLayout();
+  const heights = createTimelineRowHeights();
+  const markup = '<li data-index="4"><div role="link" data-href="/Alice/status/4"><article></article></div></li>';
+  history.replaceState(null, '', '/i/lists/42');
+  document.body.innerHTML = `<main><div id="urt:list:42"><ul>${markup}</ul></div></main>`;
+  const list = document.querySelector('ul')!;
+  try {
+    heights.sync();
+    resize(list, 800);
+    resize(list.firstElementChild!, 240);
+    list.replaceChildren();
+    heights.sync();
+    list.innerHTML = markup;
+    expect(reservedHeight(list.firstElementChild!)).toBe('240px');
+
+    history.replaceState(null, '', '/i/lists/43');
+    list.parentElement!.id = 'urt:list:43';
+    heights.sync();
+    list.innerHTML = markup;
+    expect(reservedHeight(list.firstElementChild!)).toBeUndefined();
+    heights.sync();
+    resize(list.firstElementChild!, 320);
+    history.replaceState(null, '', '/i/lists/43/members');
+    heights.sync();
+    list.innerHTML = markup;
+    expect(reservedHeight(list.firstElementChild!)).toBeUndefined();
+  } finally {
+    heights.destroy();
+    history.replaceState(null, '', originalUrl);
+  }
 });

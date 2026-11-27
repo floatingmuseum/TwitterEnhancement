@@ -1,8 +1,8 @@
-import { findHomeTimelineList } from './home-timeline';
+import { findVirtualTimelineList } from './virtual-timeline';
 import { frameIdentity, POST_FRAME_SELECTOR } from './post-frame';
 
-const FEED = 'data-te-measured-home-feed';
-const READY = 'data-te-measured-home-post';
+const FEED = 'data-te-measured-feed';
+const READY = 'data-te-measured-post';
 const MAX_ROWS = 256;
 
 interface ObservedPost {
@@ -14,11 +14,12 @@ interface ObservedPost {
 
 // X can synchronously measure a remounted li in the same call that inserts it,
 // before either content script's MutationObserver gets to size or filter it.
-export function createHomeRowHeights() {
+export function createTimelineRowHeights() {
   const sheet = new CSSStyleSheet();
   const rules = new Map<string, string>();
   const observed = new Map<Element, ObservedPost>();
   let list: HTMLElement | null = null;
+  let pathname: string | undefined;
   let width: number | undefined;
 
   const observer = new ResizeObserver(entries => {
@@ -60,13 +61,15 @@ export function createHomeRowHeights() {
     sheet.replaceSync('');
     list?.removeAttribute(FEED);
     list = null;
+    pathname = undefined;
     width = undefined;
   }
 
   function sync() {
-    const next = findHomeTimelineList(document);
-    if (next !== list) {
+    const next = findVirtualTimelineList(document, location);
+    if (next !== list || pathname !== location.pathname) {
       reset();
+      pathname = location.pathname;
       list = next;
       if (list) {
         list.setAttribute(FEED, '');

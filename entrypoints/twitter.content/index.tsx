@@ -3,8 +3,8 @@ import { findXNoteSurfaceTargets } from '../../src/platform/x/dom-adapter';
 import { EXTERNAL_VIDEO_DATA_EVENT } from '../../src/platform/x/external-video-data-bridge';
 import { createXExternalVideoManager } from '../../src/platform/x/external-video-manager';
 import { createXImageDownloadManager } from '../../src/platform/x/image-download-manager';
-import { hasNewHomeTimelinePosts } from '../../src/platform/x/home-timeline';
-import { createHomeRowHeights } from '../../src/platform/x/home-row-heights';
+import { hasNewTimelinePosts } from '../../src/platform/x/virtual-timeline';
+import { createTimelineRowHeights } from '../../src/platform/x/timeline-row-heights';
 import { createXInterfaceModuleManager } from '../../src/platform/x/interface-module-manager';
 import { createXRepostTimelineManager } from '../../src/platform/x/list-repost-manager';
 import { INSTALL_TIMELINE_ROW_STYLE } from '../../src/platform/x/timeline-style-message';
@@ -58,8 +58,8 @@ export default defineContentScript({
     );
     let animationFrame: number | null = null;
     let repostsNeedScan = true;
-    const homeRowHeights = createHomeRowHeights();
-    const unsubscribeRowHeights = listRepostPreferenceRepository.subscribe(homeRowHeights.reset);
+    const rowHeights = createTimelineRowHeights();
+    const unsubscribeRowHeights = listRepostPreferenceRepository.subscribe(rowHeights.reset);
 
     const scan = () => {
       animationFrame = null;
@@ -74,7 +74,7 @@ export default defineContentScript({
       videoDurationManager.sync();
       imageDownloadManager.sync();
       externalVideoManager.sync();
-      homeRowHeights.sync();
+      rowHeights.sync();
     };
 
     const scheduleScan = () => {
@@ -86,7 +86,7 @@ export default defineContentScript({
 
     const observer = new MutationObserver((records) => {
       scheduleScan();
-      if (ctx.isValid && hasNewHomeTimelinePosts(records)) {
+      if (ctx.isValid && hasNewTimelinePosts(records)) {
         // A returning filtered post must have its final height in this frame.
         repostTimelineManager.sync();
         repostsNeedScan = false;
@@ -122,7 +122,7 @@ export default defineContentScript({
     const cleanup = () => {
       observer.disconnect();
       unsubscribeRowHeights();
-      homeRowHeights.destroy();
+      rowHeights.destroy();
       if (animationFrame !== null) {
         window.cancelAnimationFrame(animationFrame);
       }

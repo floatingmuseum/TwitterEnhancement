@@ -1,5 +1,5 @@
 import { createXInterfaceLayoutManager, INITIAL_WIDE_LAYOUT_ATTRIBUTE } from '../src/platform/x/interface-layout-manager';
-import { hasNewHomeTimelinePosts } from '../src/platform/x/home-timeline';
+import { hasNewTimelinePosts } from '../src/platform/x/virtual-timeline';
 import { interfaceLayoutPreferenceRepository } from '../src/shared/storage/browser-interface-layout-preference-repository';
 
 export default defineContentScript({
@@ -23,7 +23,7 @@ export default defineContentScript({
       if (!ctx.isValid) return;
       const mountedColumns = waitingForColumns && document.querySelector('main + aside, [data-testid="sidebarColumn"]');
       if (mountedColumns) waitingForColumns = false;
-      if (mountedColumns || hasNewHomeTimelinePosts(records)) {
+      if (mountedColumns || hasNewTimelinePosts(records)) {
         if (frame !== null) cancelAnimationFrame(frame);
         frame = null;
         layout.sync();

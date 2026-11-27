@@ -7,7 +7,7 @@ import {
   type ListRepostPreferences,
 } from '../../features/list-reposts/list-repost-preference';
 import { isPromotedTweetArticle } from './promoted-tweet';
-import { findHomeTimelineList } from './home-timeline';
+import { findVirtualTimelineList, getXListId } from './virtual-timeline';
 import { frameIdentity, POST_FRAME_SELECTOR } from './post-frame';
 import { isDarkXPage } from './theme';
 
@@ -46,24 +46,9 @@ interface HiddenArticleState extends InlineDisplayState {
 
 type HiddenArticleKind = 'plain-repost' | 'promoted-tweet';
 
-const LIST_ROUTE_PATTERNS = [
-  /^\/i\/lists\/(\d+)\/?$/,
-  /^\/[a-z0-9_]+\/lists\/(\d+)\/?$/i,
-  /^\/i\/user\/\d+\/list\/(\d+)\/?$/,
-];
-
 const PROFILE_HANDLE_PATTERN = /^[a-z0-9_]{1,15}$/i;
 
-export function getXListId(url: URL): string | null {
-  for (const pattern of LIST_ROUTE_PATTERNS) {
-    const match = pattern.exec(url.pathname);
-    if (match?.[1]) {
-      return match[1];
-    }
-  }
-
-  return null;
-}
+export { getXListId };
 
 function linkTargetsListSubroute(
   link: HTMLAnchorElement,
@@ -176,30 +161,13 @@ export function findXRepostTimelineTarget(
     return null;
   }
 
-  if (route.surface === 'home') {
-    const timeline = findHomeTimelineList(root);
-    if (timeline) {
-      return {
-        controlAnchor: timeline.closest('section[aria-labelledby]'),
-        controlPlacement: 'before',
-        timeline,
-        routeKey: route.key,
-        surface: route.surface,
-      };
-    }
-  }
-
-  if (route.surface === 'list') {
-    // X virtualizes list posts as indexed rows. The list header can be absent
-    // on scroll restoration, so keep the switch outside the measured rows.
-    const lists = root.querySelectorAll<HTMLElement>('main ul:has(> li[data-index] article)');
-    const timeline = Array.from(lists).find(list =>
-      !list.closest('article, aside, nav, [role="dialog"], [hidden], [aria-hidden="true"]'),
-    );
+  if (route.surface === 'home' || route.surface === 'list') {
+    const timeline = findVirtualTimelineList(root, url);
     if (timeline) {
       const feed = timeline.parentElement;
+      const listAnchor = feed?.matches('[id^="urt:"]') ? feed : timeline;
       return {
-        controlAnchor: feed?.matches('[id^="urt:"]') ? feed : timeline,
+        controlAnchor: route.surface === 'home' ? timeline.closest('section[aria-labelledby]') : listAnchor,
         controlPlacement: 'before',
         timeline,
         routeKey: route.key,
